@@ -36,11 +36,22 @@ Already using KosmicLitTrack? Use the same sheet. Swap in the new script and kee
 
 ## Download
 
-Every push to `main` builds Linux (`.AppImage`, `.deb`, `.rpm`), Windows (`-setup.exe`, `.msi`) and Android (`Starborn.apk`) files. You'll find them under the run's **Artifacts** in the Actions tab. Pushing a tag publishes a release:
+Each platform has its own build pipeline in GitHub Actions:
+
+| Workflow | Builds | Runs on |
+| --- | --- | --- |
+| **Linux** (`linux.yml`) | `.AppImage` (any distro), `.deb` (Ubuntu/Mint/Debian), `.rpm` (Fedora) | every push to `main`, PRs, by hand |
+| **Windows** (`windows.yml`) | `-setup.exe` installer and `.msi` | every push to `main`, PRs, by hand |
+| **Android** (`android.yml`) | signed universal `Starborn.apk` | every push to `main`, PRs, by hand |
+| **Release** (`release.yml`) | runs all three, then publishes one GitHub release with every file | pushing a `v*` tag, or by hand |
+
+Builds from a push are under that run's **Artifacts** in the Actions tab. You can run any single platform from **Actions → (workflow) → Run workflow**. To publish a release:
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0
 ```
+
+Pushes that only change docs (`*.md`) or the sheet script (`sync/`) skip the builds.
 
 ### Android signing
 An update only installs over an older APK when both are signed with the same key. Without setup, each build uses a throwaway key. To keep one key:

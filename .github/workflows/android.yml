@@ -1,0 +1,98 @@
+name: Android
+
+# Builds a signed universal APK (phones and tablets, ARM and x86).
+# Runs on every push to main, on pull requests, by hand, and from release.yml.
+#
+# Signing: set the ANDROID_KEYSTORE_B64 / _PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+# secrets (see README) so every build shares one key and updates install over each other.
+# Without them the APK is signed with a throwaway key.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'sync/**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+
+jobs:
+  build:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.0.12077973
+      BUILD_TOOLS: 35.0.0
+      PLATFORM: android-35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The runner image already ships the Android SDK; use it directly rather than a setup
+      # action (android-actions/setup-android currently fails on its licence prompt).
+      - name: Android SDK, NDK and build tools
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;${NDK_VERSION}" "build-tools;${BUILD_TOOLS}" "platforms;${PLATFORM}" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm install
+
+      - name: Generate the Android project
+        run: |
+          npx tauri android init --ci
+          npx tauri icon app-icon.png
+
+      - name: Build APK
+        run: npx tauri android build --apk --ci
+
+      - name: Sign APK
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release-unsigned.apk' | head -n 1)
+          echo "Unsigned APK: $APK"
+          BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            echo "$ANDROID_KEYSTORE_B64" | base64 -d > release.jks
+            STOREPASS="$ANDROID_KEYSTORE_PASSWORD"; ALIAS="$ANDROID_KEY_ALIAS"; KEYPASS="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
+          else
+            echo "::warning::No ANDROID_KEYSTORE_B64 secret, so this APK is signed with a throwaway key. Updates from a later build won't install over it. See README."
+            keytool -genkeypair -keystore release.jks -alias sb -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android -dname "CN=Starborn"
+            STOREPASS=android; ALIAS=sb; KEYPASS=android
+          fi
+          "$BT/zipalign" -p -f 4 "$APK" aligned.apk
+          "$BT/apksigner" sign --ks release.jks --ks-key-alias "$ALIAS" --ks-pass "pass:$STOREPASS" --key-pass "pass:$KEYPASS" \
+            --out Starborn.apk aligned.apk
+          "$BT/apksigner" verify Starborn.apk
+          rm -f release.jks aligned.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Starborn-Android
+          path: Starborn.apk
+          if-no-files-found: error

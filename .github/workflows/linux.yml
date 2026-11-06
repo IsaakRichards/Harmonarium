@@ -1,0 +1,52 @@
+name: Linux
+
+# Builds the Linux packages: .AppImage (runs anywhere), .deb (Debian/Ubuntu/Mint), .rpm (Fedora).
+# Runs on every push to main, on pull requests, by hand, and from release.yml.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'sync/**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+
+jobs:
+  build:
+    name: Linux (x64)
+    # 22.04 on purpose: an AppImage built on an older glibc runs on more distros.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System libraries for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm install
+
+      - name: Build
+        run: npx tauri build --bundles appimage,deb,rpm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Starborn-Linux
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: error

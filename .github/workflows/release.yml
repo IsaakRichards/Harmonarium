@@ -1,0 +1,50 @@
+name: Release
+
+# Push a tag like v0.2.0 to build every platform and publish one GitHub release with all files:
+#   git tag v0.2.0 && git push origin v0.2.0
+# Or run it by hand from the Actions tab and give it a tag name.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release (created on the current commit if it doesn't exist)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    uses: ./.github/workflows/linux.yml
+  windows:
+    uses: ./.github/workflows/windows.yml
+  android:
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  publish:
+    name: Publish release
+    needs: [linux, windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List files
+        run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: Starborn ${{ inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          body: |
+            **Which file do I want?**
+            - **Android:** `Starborn.apk`
+            - **Windows:** `Starborn_…_x64-setup.exe` (or the `.msi`)
+            - **Linux:** `.AppImage` runs on any distro · `.deb` for Ubuntu/Mint/Debian · `.rpm` for Fedora
+          files: dist/*
