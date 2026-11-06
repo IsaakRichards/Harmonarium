@@ -193,7 +193,7 @@ QStringList LocalServer::bookRoots() const
         if (!c.isEmpty() && QFileInfo(c).isDir() && !roots.contains(c))
             roots << c;
     };
-    add(QStandardPaths::writableLocation(QStandardPaths::DocumentLocation));
+    add(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
     add(QStandardPaths::writableLocation(QStandardPaths::DownloadLocation));
     add(QDir::homePath() + QStringLiteral("/Books"));
     // Memory cards are mounted under /run/media/<user>/<card>.
