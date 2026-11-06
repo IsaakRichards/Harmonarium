@@ -34,8 +34,13 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: List files
-        run: ls -la dist
+      # The desktop artifacts keep their bundle subfolders (appimage/, deb/, nsis/, …);
+      # flatten everything into one folder so every file gets attached.
+      - name: Gather files
+        run: |
+          mkdir -p release
+          find dist -type f -exec mv {} release/ \;
+          ls -la release
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -47,4 +52,4 @@ jobs:
             - **Android:** `Starborn.apk`
             - **Windows:** `Starborn_…_x64-setup.exe` (or the `.msi`)
             - **Linux:** `.AppImage` runs on any distro · `.deb` for Ubuntu/Mint/Debian · `.rpm` for Fedora
-          files: dist/*
+          files: release/*
