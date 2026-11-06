@@ -20,18 +20,19 @@ let lastSavedCfi = null;
 let holdSaves = false; // true while we check the sheet on open
 let initialCfi = null; // where the book first landed, so merely opening never counts as reading
 let pendingRemote = null;
-let onClose = () => {};
+let hooks = { close: () => {}, onFinished: () => {} };
+let finishOffered = false;
 
 const $ = (id) => document.getElementById(id);
 
-export function init({ close }) {
-  onClose = close;
+export function init(h) {
+  hooks = { ...hooks, ...h };
 
   $("btn-back").addEventListener("click", () => closeBook());
   $("btn-toc").addEventListener("click", () => toggle("toc-drawer"));
   $("btn-aa").addEventListener("click", () => toggle("aa-panel"));
-  for (const b of document.querySelectorAll("[data-close]")) {
-    b.addEventListener("click", () => $(b.dataset.close).classList.add("hidden"));
+  for (const b of document.querySelectorAll("[data-dismiss]")) {
+    b.addEventListener("click", () => $(b.dataset.dismiss).classList.add("hidden"));
   }
   $("tap-prev").addEventListener("click", () => rendition?.prev());
   $("tap-next").addEventListener("click", () => rendition?.next());
@@ -76,7 +77,8 @@ function toggle(id) {
 }
 
 function onKey(e) {
-  if (!rendition || $("view-reader").classList.contains("hidden")) return;
+  if (!rendition || !document.body.classList.contains("reading")) return;
+  if (document.getElementById("panel") && !document.getElementById("panel").hidden) return;
   if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); rendition.next(); }
   else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); rendition.prev(); }
   else if (e.key === "Escape") closeBook();
@@ -93,12 +95,13 @@ export async function open(id) {
   lastSavedCfi = local?.cfi || null;
   holdSaves = true;
   initialCfi = null;
+  finishOffered = false;
   hideBanner();
 
   $("reader-title").textContent = meta.title;
   $("viewer").innerHTML = "";
   $("progress-slider").disabled = true;
-  document.body.dataset.theme = settings.get().theme;
+  document.body.dataset.rtheme = settings.get().theme;
 
   book = ePub(buf);
   await book.ready;
@@ -185,7 +188,7 @@ async function checkRemote(local) {
 function showBanner(remote) {
   pendingRemote = remote;
   $("sync-banner-text").innerHTML =
-    `On <b>${escapeHtml(remote.device_name || "another device")}</b> thou didst reach ` +
+    `On <b>${escapeHtml(remote.device_name || "another device")}</b> you reached ` +
     `<b>${pct(remote.percent)}</b>${remote.chapter ? ` — ${escapeHtml(remote.chapter)}` : ""} ` +
     `<span class="muted">(${timeAgo(Number(remote.updated_at))})</span>`;
   $("sync-banner").classList.remove("hidden");
@@ -205,6 +208,10 @@ function onRelocated(loc) {
   else percent = book.spine.length ? loc.start.index / book.spine.length : 0;
   current = { cfi, percent, chapter: chapterFor(loc.start.href) };
   if (holdSaves && initialCfi === null) initialCfi = cfi;
+  if (!holdSaves && !finishOffered && (loc.atEnd || (book.locations.length() && percent >= 0.995))) {
+    finishOffered = true;
+    hooks.onFinished(meta.title);
+  }
   updateFooter();
   if (!holdSaves && cfi !== lastSavedCfi) saveProgress();
 }
@@ -273,7 +280,7 @@ async function setFontSize(v) {
 
 async function setTheme(name) {
   await settings.update({ theme: name });
-  document.body.dataset.theme = name;
+  document.body.dataset.rtheme = name;
   rendition?.themes.select(name);
 }
 
@@ -349,5 +356,5 @@ export async function closeBook() {
   document.body.classList.remove("immersive");
   $("toc-drawer").classList.add("hidden");
   $("aa-panel").classList.add("hidden");
-  onClose();
+  hooks.close();
 }

@@ -1,4 +1,4 @@
-// Google Sheet sync client.
+// Reading-position sync client (the sheet's "Progress" tab).
 //
 // The sheet is fronted by a small Google Apps Script web app (see sync/Code.gs).
 // Each device writes ONE row per book (book_id + device_id). To decide where to
@@ -15,7 +15,8 @@ import { debounce } from "./util.js";
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 let httpFetch = null;
 
-async function doFetch(url, opts) {
+/** fetch() that goes through Tauri's HTTP plugin in the app (no CORS limits), else the browser's. */
+export async function netFetch(url, opts) {
   if (isTauri) {
     if (!httpFetch) httpFetch = (await import("@tauri-apps/plugin-http")).fetch;
     return httpFetch(url, opts);
@@ -24,7 +25,7 @@ async function doFetch(url, opts) {
 }
 
 export function isConfigured(s = settings.get()) {
-  return Boolean(s?.syncUrl && /^https:\/\/script\.google(usercontent)?\.com\//.test(s.syncUrl));
+  return Boolean(s?.syncUrl && s?.syncKey && /^https:\/\/script\.google(usercontent)?\.com\//.test(s.syncUrl));
 }
 
 async function call(params, body) {
@@ -34,14 +35,14 @@ async function call(params, body) {
   let res;
   if (body) {
     // text/plain keeps this a "simple" request (no CORS preflight in browsers).
-    res = await doFetch(url.toString(), {
+    res = await netFetch(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ ...body, key: s.syncKey }),
+      body: JSON.stringify({ ...body, token: s.syncKey }),
     });
   } else {
-    for (const [k, v] of Object.entries({ ...params, key: s.syncKey })) url.searchParams.set(k, v);
-    res = await doFetch(url.toString(), { method: "GET" });
+    for (const [k, v] of Object.entries({ ...params, token: s.syncKey })) url.searchParams.set(k, v);
+    res = await netFetch(url.toString(), { method: "GET" });
   }
   const text = await res.text();
   let data;

@@ -1,61 +1,58 @@
-# Setting up Google Sheet sync
+# Connecting Starborn to a Google Sheet
 
-KosmicLitSync keeps reading positions in a Google Sheet you own. A tiny Apps
-Script attached to that sheet acts as the go-between, so the app never needs
-your Google password or an OAuth login on each device.
+Starborn keeps two things in one Google Sheet that you own:
 
-## 1. Make the sheet
+| Tab | What's in it |
+| --- | --- |
+| **First tab** (your lists) | Pairs of columns: a list name in row 1 (*Completed*, *Queue*, …) and a *Series* column beside it |
+| **Progress** (added automatically) | One row per book per device: where you are, as a CFI and a percentage |
 
-1. Create a new Google Sheet (e.g. **KosmicLitSync Progress**).
-2. Open **Extensions → Apps Script**.
-3. Delete whatever is in `Code.gs` and paste the contents of [`Code.gs`](./Code.gs).
-4. Save (💾).
+A small Apps Script attached to the sheet is the go-between, so there's no Google
+Cloud project, OAuth login, or password stored on your devices.
 
-## 2. Set the secret key
+> **Coming from KosmicLitTrack?** Use the same sheet. Replace the old script with
+> [`Code.gs`](./Code.gs), keep your `TOKEN`, and redeploy as a new version. Your
+> lists stay exactly as they are; a `Progress` tab is added at the end.
 
-Anyone who has the web-app URL *and* the key can read and write your progress,
-so pick something long and random.
+## 1. Add the script
 
-1. In the Apps Script editor, click **⚙ Project Settings**.
-2. Under **Script Properties**, add:
-   - Property: `SYNC_KEY`
-   - Value: your secret (e.g. 30+ random characters)
+1. Open your sheet (or make a new one), then **Extensions → Apps Script**.
+2. Replace everything in `Code.gs` with [`Code.gs`](./Code.gs) from this folder.
+3. Change `TOKEN` at the top to a long random phrase. Anyone with the URL *and*
+   the token can read and edit the sheet, so treat it like a password.
+4. Save.
 
-## 3. Deploy as a web app
+## 2. Deploy
 
-1. **Deploy → New deployment** → gear icon → **Web app**.
-2. *Execute as*: **Me**
-3. *Who has access*: **Anyone**  ← required, the key is what protects it
-4. **Deploy**, approve the permission prompt (it only touches this spreadsheet).
-5. Copy the **Web app URL** — it ends in `/exec`.
+1. **Deploy → New deployment** → gear → **Web app**.
+2. *Execute as*: **Me**; *Who has access*: **Anyone** (the token is what protects it).
+3. **Deploy** and approve the permissions (it only touches this spreadsheet).
+4. Copy the **Web app URL** (it ends in `/exec`).
 
-> If you later edit `Code.gs`, use **Deploy → Manage deployments → ✏ Edit →
-> Version: New version** so the same URL picks up the change.
+If you change the script later, use **Deploy → Manage deployments → Edit → New
+version** so the URL stays the same.
 
-## 4. Connect each device
+## 3. Connect each device
 
-In the app: **⚙ Settings → Google Sheet sync**
+In Starborn open **Settings** (the gear), paste the URL and token, and press
+**Connect**. Give each device a name you'll recognise (*Pixel*, *Dorm laptop*).
 
-- **Web App URL** – the `/exec` URL
-- **Sync key** – the same `SYNC_KEY`
-- **Device name** – something you'll recognise ("Pixel", "Dorm laptop")
+## How it behaves
 
-Tap **Test connection**, then **Save**. A `Progress` tab appears in the sheet
-on the first sync.
+- **Lists** sync both ways: changes in the app are written straight back, and
+  edits made in the sheet show up within 30 seconds.
+- **Reading positions** save on this device at once and go to the sheet a few
+  seconds later (immediately when the app is backgrounded). Offline? They queue
+  up and send later.
+- Opening a book that was read further on another device shows
+  *"On Pixel you reached 63% — Jump there / Stay here"* (or jumps for you, if
+  you turn that on in Settings).
+- A book on your Lists that you also have as an EPUB shows **📖 42%**, and its
+  details panel has **Read now**. Reaching the end of a book offers to move it
+  to *Completed*.
 
-## How syncing behaves
+## Identical files
 
-- Every device writes one row per book. Rows are never deleted by the app.
-- Turning a page saves locally at once and pushes to the sheet a few seconds
-  later (and immediately when the app goes to the background). If you're
-  offline, pushes wait in a queue and go out later.
-- When you open a book, the app checks the sheet. If another device has a
-  **newer** position, you get a banner: *Jump there* or *Stay here*.
-  (Or turn on *Jump automatically* in Settings.)
-- The library's ⟳ button refreshes badges showing books read further elsewhere.
-
-## Important: identical files
-
-Books are matched by the SHA-256 hash of the EPUB file. Copy the **same file**
-to each device; a re-downloaded or re-converted EPUB with different bytes is
-treated as a different book.
+EPUBs are matched across devices by the SHA-256 of the file. Copy the **same
+file** to every device: a re-downloaded or converted copy with different bytes
+counts as a different book. (Matching a shelf book to a list entry is by title.)

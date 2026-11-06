@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "KosmicLitSync",
-  "version": "0.1.0",
-  "identifier": "com.isaakrichards.kosmiclitsync",
+  "productName": "Starborn",
+  "version": "0.2.0",
+  "identifier": "com.isaakrichards.starborn",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,11 +13,12 @@
     "windows": [
       {
         "label": "main",
-        "title": "KosmicLitSync",
-        "width": 1100,
-        "height": 800,
+        "title": "Starborn",
+        "width": 1280,
+        "height": 840,
         "minWidth": 360,
-        "minHeight": 480
+        "minHeight": 520,
+        "backgroundColor": "#070914"
       }
     ],
     "security": {
@@ -28,13 +29,14 @@
     "active": true,
     "targets": "all",
     "category": "Education",
-    "shortDescription": "EPUB reader with Google Sheet progress sync",
+    "shortDescription": "Galaxy-themed EPUB reader and reading tracker",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.png",
       "icons/icon.ico"
-    ]
+    ],
+    "longDescription": "Read EPUBs, keep your reading lists, and pick up where you left off on any device, all synced through your own Google Sheet."
   }
 }

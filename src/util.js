@@ -46,12 +46,15 @@ export function escapeHtml(s) {
 }
 
 let toastTimer;
-export function toast(msg, ms = 2600) {
-  const el = document.getElementById("toast");
-  el.textContent = msg;
-  el.classList.remove("hidden");
+/** Bottom toast. Pass a function as `action` to add a button (default label "Undo"). */
+export function toast(msg, action, label = "Undo") {
+  const t = document.getElementById("toast");
+  t.innerHTML = `<span>${escapeHtml(msg)}</span>${typeof action === "function" ? `<button data-undo>${escapeHtml(label)}</button>` : ""}`;
+  t.hidden = false;
+  const b = t.querySelector("[data-undo]");
+  if (b) b.onclick = () => { t.hidden = true; action(); };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.add("hidden"), ms);
+  toastTimer = setTimeout(() => { t.hidden = true; }, typeof action === "function" ? 7000 : 3500);
 }
 
 export function debounce(fn, ms) {
@@ -64,6 +67,3 @@ export function debounce(fn, ms) {
   return wrapped;
 }
 
-export function show(id) {
-  for (const v of document.querySelectorAll(".view")) v.classList.toggle("hidden", v.id !== id);
-}
