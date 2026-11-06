@@ -8,6 +8,13 @@
 //   Reader   Left/Right turn pages, Up/Down bring up the bars, OK toggles them,
 //            gamepad shoulders (LB/RB) also turn pages
 //
+// Keypad mode (on by default on Sailfish OS, e.g. the Commodore Callback 8020, and on devices
+// with no pointer) adds T9-style number keys:
+//   2 4 6 8 / 5   same as the arrows / OK
+//   Home          1 Shelf · 3 Lists · 0 Add books (Shelf) · * Search · # Settings
+//   Reader        1 Contents · 3 Text settings · * smaller text · # larger text · 0 next theme
+// and the phone's own keys (Back, Select, Menu / soft keys) arrive through window.starbornKey().
+//
 // The focus ring only shows once a d-pad key is used; touch or the mouse hides it again.
 
 const FOCUSABLE = [
@@ -18,6 +25,8 @@ const FOCUSABLE = [
 
 const TYPING = new Set(["text", "search", "url", "email", "password", "number", "tel", ""]);
 let reader = null;
+let hooks = { openSettings: () => {}, addBooks: () => {} };
+let keypad = false;
 
 const $ = (sel) => document.querySelector(sel);
 const shown = (el) => !!el && !el.hidden && !el.classList.contains("hidden");
@@ -44,16 +53,49 @@ export function restoreFocus() {
 /** Put focus on the page (used when a book opens). */
 export function focusPage() { document.activeElement?.blur?.(); }
 
-export function init(readerApi) {
+/** Keypad mode: always show the focus ring, number-key shortcuts, no trips to websites. */
+export function setKeypad(on) {
+  keypad = !!on;
+  document.body.classList.toggle("keypad", keypad);
+  if (keypad) { document.body.classList.add("dpad"); later(ensureFocus, 300); }
+}
+export const isKeypad = () => keypad;
+
+export function init(readerApi, h = {}) {
   reader = readerApi;
+  hooks = { ...hooks, ...h };
   document.addEventListener("keydown", (e) => handle(e), true);
+  // Hardware keys a webview can't see (Back, Select, Menu, soft keys) are forwarded by
+  // the Sailfish shell as window.starbornKey("back" | "ok" | "menu" | …).
+  window.starbornKey = (name) => { handle(synthetic(NAMED[name] || name)); return true; };
+  // Never leave the app for a website: on keypad phones there's no way back.
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("a[href]");
+    if (!a || !keypad) return;
+    const url = new URL(a.href, location.href);
+    if (url.origin !== location.origin) { e.preventDefault(); e.stopPropagation(); toastFn("Links to websites are turned off here"); }
+  }, true);
   const off = () => document.body.classList.remove("dpad");
   document.addEventListener("mousedown", off, true);
   document.addEventListener("touchstart", off, { capture: true, passive: true });
   initGamepads();
 }
 
+const NAMED = { back: "Escape", ok: "Enter", menu: "ContextMenu", softleft: "ContextMenu", softright: "Escape",
+  up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" };
+const DIGIT_ARROWS = { 2: "up", 8: "down", 4: "left", 6: "right", 5: "ok" };
+
+function synthetic(key) {
+  let prevented = false;
+  return { key, synthetic: true, ctrlKey: false, altKey: false, metaKey: false,
+    get defaultPrevented() { return false; }, preventDefault() { prevented = true; }, stopPropagation() {}, get _prevented() { return prevented; } };
+}
+
+let toastFn = () => {};
+export function setToast(fn) { toastFn = fn; }
+
 function keyOf(e) {
+  if (keypad && DIGIT_ARROWS[e.key]) return DIGIT_ARROWS[e.key];
   switch (e.key) {
     case "ArrowUp": case "Up": return "up";
     case "ArrowDown": case "Down": return "down";
@@ -61,6 +103,7 @@ function keyOf(e) {
     case "ArrowRight": case "Right": return "right";
     case "Enter": case " ": case "Spacebar": case "Select": return "ok";
     case "Escape": case "Esc": case "Backspace": case "BrowserBack": case "GoBack": return "back";
+    case "ContextMenu": case "F10": return "menu";
     case "PageDown": case "MediaTrackNext": return "pagenext";
     case "PageUp": case "MediaTrackPrevious": return "pageprev";
     default: return null;
@@ -69,11 +112,33 @@ function keyOf(e) {
 
 /** Main key handler. Also called by the reader for keys pressed inside the book's frame. */
 export function handle(e) {
-  const k = keyOf(e);
-  if (!k || e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return;
+  if (e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return;
   const a = document.activeElement;
   const tag = a?.tagName;
-  const typing = tag === "TEXTAREA" || (tag === "INPUT" && TYPING.has(a.type));
+  const field = tag === "TEXTAREA" || (tag === "INPUT" && TYPING.has(a.type));
+
+  // Keypad phones: a text field is only "typing" after OK/5 is pressed on it, so number keys
+  // keep moving around instead of filling the field. Back or Up/Down leave the field.
+  if (keypad && field && !a.dataset.typing) {
+    const k1 = keyOf(e);
+    if (k1 === "ok") {
+      e.preventDefault();
+      a.dataset.typing = "1";
+      a.classList.add("typing");
+      if (a.dataset.ph !== undefined) a.placeholder = a.dataset.ph;
+      if (a.setSelectionRange && a.value) try { a.setSelectionRange(a.value.length, a.value.length); } catch {}
+      return;
+    }
+    if (!k1 && /^[0-9*#]$/.test(e.key)) { e.preventDefault(); return; } // swallow stray digits
+  }
+  const typing = field && (!keypad || !!a.dataset.typing);
+  if (keypad && typing && (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack" || e.synthetic && e.key === "Escape")) {
+    e.preventDefault(); e.stopPropagation(); stopTyping(a); return;
+  }
+  const k0 = keyOf(e);
+  // In text fields, number keys are for typing.
+  const k = k0 && /^[0-9]$/.test(e.key) && typing ? null : k0;
+  if (!k) { if (keypad && !typing) shortcut(e); return; }
 
   // Leave text fields, dropdowns and sliders their normal keys.
   if (typing && (k === "left" || k === "right" || k === "ok" || (k === "back" && e.key === "Backspace"))) return;
@@ -94,8 +159,11 @@ export function handle(e) {
     later(ensureFocus);
     return;
   }
+  if (k === "menu") { e.preventDefault(); hooks.openSettings(); later(ensureFocus, 150); return; }
   if (k === "ok") {
     if (!a || a === document.body || !scope().contains(a)) { e.preventDefault(); focusFirst(); return; }
+    // Keys that aren't a real Enter (keypad 5, Select, gamepad A) don't press buttons on their own.
+    if (e.synthetic || e.key !== "Enter" && e.key !== " ") { e.preventDefault(); if (tag === "SELECT") a.focus(); else a.click(); later(ensureFocus, 120); return; }
     // Buttons, links and checkboxes activate natively; labels and custom controls don't.
     if (tag === "LABEL" || a.matches("[tabindex]:not(button):not(a):not(input)")) { e.preventDefault(); a.click(); }
     later(ensureFocus, 120);
@@ -104,6 +172,50 @@ export function handle(e) {
   if (k === "pagenext" || k === "pageprev") return; // let the page scroll
   e.preventDefault();
   move(k);
+}
+
+function stopTyping(el) {
+  if (!el?.dataset) return;
+  delete el.dataset.typing;
+  el.classList.remove("typing");
+}
+document.addEventListener("focusout", (e) => {
+  stopTyping(e.target);
+  if (e.target?.dataset?.ph !== undefined) { e.target.placeholder = e.target.dataset.ph; delete e.target.dataset.ph; }
+}, true);
+// In keypad mode, a focused text field says how to start typing.
+document.addEventListener("focusin", (e) => {
+  const el = e.target;
+  if (!keypad || !el || !(el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && TYPING.has(el.type)))) return;
+  if (el.dataset.ph === undefined) { el.dataset.ph = el.placeholder || ""; el.placeholder = "Press 5 or OK to type"; }
+}, true);
+
+// ---------------------------------------------------------------- keypad shortcuts
+
+function shortcut(e) {
+  const key = e.key;
+  if (!/^[0-9*#]$/.test(key)) return;
+  const reading = document.body.classList.contains("reading");
+  if (reading && reader) {
+    const act = { 1: reader.toggleContents, 3: reader.toggleText, "*": () => reader.textSize(-1), "#": () => reader.textSize(1), 0: reader.cycleTheme }[key];
+    if (!act) return;
+    e.preventDefault(); document.body.classList.add("dpad"); act();
+    if (key === "1") later(() => focusIn("#toc-drawer"), 60);
+    if (key === "3") later(() => focusIn("#aa-panel"), 60);
+    return;
+  }
+  if (shown($("#panel")) || shown($("#device-books"))) return;
+  const tab = (name) => { const b = $(`.tabs [data-tab="${name}"]`); if (b) { b.click(); focusEl(b); } };
+  const act = {
+    1: () => tab("shelf"),
+    3: () => tab("lists"),
+    0: () => { if (document.body.dataset.tab === "shelf") hooks.addBooks(); },
+    "*": () => { const q = document.body.dataset.tab === "lists" ? $("#q") : $("#lib-search"); q && q.focus(); },
+    "#": () => hooks.openSettings(),
+  }[key];
+  if (!act) return;
+  e.preventDefault(); document.body.classList.add("dpad"); act();
+  later(ensureFocus, 150);
 }
 
 // ---------------------------------------------------------------- reader
@@ -115,6 +227,7 @@ function readerKey(k, e, a) {
   const inOverlay = !!a && overlay && ["#toc-drawer", "#aa-panel", "#sync-banner"].some((s) => $(s).contains(a));
   const inChrome = inBars || inOverlay;
 
+  if (k === "menu") { e.preventDefault(); reader.toggleText(); later(() => focusIn("#aa-panel"), 60); return true; }
   if (k === "back") {
     e.preventDefault(); e.stopPropagation();
     if (overlay) { reader.closeOverlays(); focusIn("#reader-bar"); }
@@ -125,7 +238,10 @@ function readerKey(k, e, a) {
   if (overlay || inChrome) {
     // Navigating the bars / panels: normal focus movement, but Up from the top bar
     // or Down from the footer drops back to the page.
-    if (k === "ok") { later(ensureFocus, 120); return false; }
+    if (k === "ok") {
+      if (e.synthetic || (e.key !== "Enter" && e.key !== " ")) { e.preventDefault(); a.click(); later(ensureFocus, 120); return true; }
+      later(ensureFocus, 120); return false;
+    }
     if (k === "pagenext" || k === "pageprev") { e.preventDefault(); k === "pagenext" ? reader.next() : reader.prev(); return true; }
     e.preventDefault(); e.stopPropagation();
     if (!move(k) && !overlay && (k === "up" || k === "down")) { a.blur(); reader.hideBars(); }
@@ -287,5 +403,5 @@ function fire(key) {
   const ev = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
   target.dispatchEvent(ev);
   // Synthetic Enter doesn't press buttons by itself; do it for real.
-  if (key === "Enter" && !ev.defaultPrevented && target !== document.body && target.click) target.click();
+  if (key === "Enter" && !ev.defaultPrevented && target !== document.body && target.click && target.tagName !== "SELECT") target.click();
 }

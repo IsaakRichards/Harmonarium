@@ -12,6 +12,7 @@ const DEFAULTS = {
   fontFamily: "",
   lineHeight: "",
   sort: "recent",
+  keypadMode: "auto", // "auto" | "on" | "off"
 };
 
 let current = null;

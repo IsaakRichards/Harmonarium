@@ -497,3 +497,22 @@ body:not(.dpad) :focus { outline: none; }
 .dev-name { font-weight: 600; font-size: 14px; }
 .dev-meta { font-size: 12px; color: var(--dim); }
 .dev-meta b { color: var(--gold); font-weight: 600; }
+
+/* ---------- keypad mode (Sailfish phones such as the Commodore Callback 8020) ---------- */
+body.keypad .hint, body.keypad #hint { display: none; }
+body.keypad input.typing { outline: 2px solid var(--cyan) !important; box-shadow: 0 0 18px rgba(111, 227, 255, 0.45) !important; }
+body.keypad .searchbar input:focus:not(.typing)::placeholder { color: var(--gold); }
+body.keypad #lib-search:focus:not(.typing)::placeholder, body.keypad #q:focus:not(.typing)::placeholder { opacity: 1; }
+
+/* small 4:3 screens (Callback: 3.25", 640×480) */
+@media (max-width: 500px) and (max-height: 700px) {
+  .top { padding-top: 6px; padding-bottom: 8px; }
+  .brand-text p { font-size: 11px; }
+  .tabs { margin-top: 8px; }
+  .tabs button { padding: 6px 14px; font-size: 11px; }
+  .searchbar { margin-top: 8px; }
+  .toolbar { margin-top: 6px; }
+  .reader-foot #foot-chapter { display: none; }
+  .aa-panel { top: 46px; }
+  .sync-banner { bottom: 44px; }
+}

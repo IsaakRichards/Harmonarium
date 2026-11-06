@@ -607,6 +607,13 @@ function renderSettings(p) {
     <p class="p-kicker">Reading sync</p>
     <div class="field"><label for="s-device">This device's name</label><input id="s-device" value="${esc(st.deviceName)}" placeholder="e.g. Pixel, Dorm laptop" autocomplete="off"></div>
     <label class="check"><input id="s-autojump" type="checkbox"${st.autoJump ? ' checked' : ''}> Jump to a newer position from another device without asking</label>
+    <hr class="sep">
+    <p class="p-kicker">Controls</p>
+    <div class="field"><label for="s-keypad">Keypad mode</label><select id="s-keypad">
+      <option value="auto"${st.keypadMode === 'auto' ? ' selected' : ''}>Automatic (on for Sailfish phones and keypad devices)</option>
+      <option value="on"${st.keypadMode === 'on' ? ' selected' : ''}>On</option>
+      <option value="off"${st.keypadMode === 'off' ? ' selected' : ''}>Off</option></select></div>
+    <p class="p-desc">Keypad mode keeps the focus ring visible and adds number keys: 2 4 6 8 move, 5 selects. At home 1 Shelf, 3 Lists, 0 Add books, * Search, # Settings. In a book 4/6 turn pages, 1 Contents, 3 Text, * and # change the size, 0 changes the theme.</p>
     <p class="p-desc">Books match across devices only when each holds the very same EPUB file.</p>
     <hr class="sep">
     <p class="p-kicker">Covers</p>
@@ -672,6 +679,7 @@ $('#panel').addEventListener('change', async e => {
   if (panel && panel.kind === 'settings') {
     if (e.target.id === 's-device' && e.target.value.trim()) { await settings.update({ deviceName: e.target.value.trim() }); toast('Device name saved'); }
     else if (e.target.id === 's-autojump') await settings.update({ autoJump: e.target.checked });
+    else if (e.target.id === 's-keypad') { await settings.update({ keypadMode: e.target.value }); window.dispatchEvent(new Event('starborn:keypad')); }
     return;
   }
   if (!panel || panel.kind !== 'book') return;

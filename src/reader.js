@@ -86,6 +86,16 @@ export const api = {
   overlayOpen: () => ["toc-drawer", "aa-panel", "sync-banner"].some((id) => !$(id).classList.contains("hidden")),
   closeOverlays,
   close: () => closeBook(),
+  // Keypad shortcuts (see dpad.js)
+  toggleContents: () => { document.body.classList.remove("immersive"); toggle("toc-drawer"); },
+  toggleText: () => { document.body.classList.remove("immersive"); toggle("aa-panel"); },
+  textSize: (step) => setFontSize(settings.get().fontSize + step * 10),
+  cycleTheme: () => {
+    const order = ["light", "sepia", "dark", "black"];
+    const next = order[(order.indexOf(settings.get().theme) + 1) % order.length];
+    setTheme(next);
+    toast({ light: "Day", sepia: "Parchment", dark: "Night", black: "Midnight" }[next]);
+  },
 };
 
 function closeOverlays() {
@@ -134,7 +144,7 @@ export async function open(id) {
   }
   rendition.themes.select(settings.get().theme);
   rendition.themes.fontSize(`${settings.get().fontSize}%`);
-  rendition.hooks.content.register((contents) => injectUserStyle(contents));
+  rendition.hooks.content.register((contents) => { injectUserStyle(contents); guardLinks(contents); });
 
   wireGestures();
   rendition.on("relocated", onRelocated);
@@ -301,6 +311,18 @@ function userCss() {
   if (lineHeight) rules.push(`line-height: ${lineHeight} !important;`);
   if (!rules.length) return "";
   return `body, p, div, span, li, blockquote, td { ${rules.join(" ")} }`;
+}
+
+/** Links to websites inside a book would turn the reader into a browser (and on phones
+ *  without one, like the Commodore Callback, strand you there), so they're disabled. */
+function guardLinks(contents) {
+  contents.document.addEventListener("click", (e) => {
+    const a = e.target.closest?.("a[href]");
+    if (a && /^(https?:|mailto:|tel:)/i.test(a.getAttribute("href"))) {
+      e.preventDefault(); e.stopPropagation();
+      toast("Links to websites are turned off in books");
+    }
+  }, true);
 }
 
 function injectUserStyle(contents) {

@@ -6,6 +6,7 @@ import * as sync from "./sync.js";
 import * as lists from "./lists.js";
 import * as dpad from "./dpad.js";
 import { toast } from "./util.js";
+import * as native from "./native.js";
 
 const TAB_KEY = "sb-tab";
 
@@ -16,6 +17,15 @@ function setTab(tab) {
 }
 
 let scrollY = 0;
+let legendShown = false;
+
+/** Keypad mode: on for Sailfish OS (e.g. the Commodore Callback) and for devices with no
+ *  pointer at all, unless the person chooses otherwise in Settings. */
+export function applyKeypadMode() {
+  const mode = settings.get().keypadMode;
+  const noPointer = window.matchMedia && window.matchMedia("(any-pointer: none)").matches;
+  dpad.setKeypad(mode === "on" || (mode === "auto" && (native.platform === "sailfish" || noPointer)));
+}
 function showReader(on) {
   if (on) {
     scrollY = window.scrollY;
@@ -38,7 +48,11 @@ async function openBook(id) {
     toast("This book could not be opened");
     return false;
   });
-  if (!ok) { showReader(false); dpad.restoreFocus(); }
+  if (!ok) { showReader(false); dpad.restoreFocus(); return; }
+  if (dpad.isKeypad() && !legendShown) {
+    legendShown = true;
+    toast("4 · 6 turn pages   5 menus   1 contents   3 text   * # size   0 theme");
+  }
 }
 
 async function boot() {
@@ -54,7 +68,10 @@ async function boot() {
     onFinished: (title) => lists.offerFinish(title),
     onKey: (e) => dpad.handle(e),
   });
-  dpad.init(reader.api);
+  dpad.init(reader.api, { openSettings: () => lists.openSettings(), addBooks: () => library.openAddBooks() });
+  dpad.setToast(toast);
+  applyKeypadMode();
+  window.addEventListener("starborn:keypad", applyKeypadMode);
   lists.init({
     openBook,
     onSyncClick: () => library.refreshRemote(true),

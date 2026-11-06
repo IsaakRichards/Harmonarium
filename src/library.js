@@ -71,6 +71,12 @@ export async function importFiles(files, { quiet = false } = {}) {
   return ids;
 }
 
+/** "+ Add books": the device list on Sailfish, otherwise the file picker. */
+export function openAddBooks() {
+  if (native.canBrowseDevice) openDeviceBooks();
+  else $("file-input").click();
+}
+
 // ---------------------------------------------------------------- Sailfish: books on the device
 
 let deviceBooks = [];

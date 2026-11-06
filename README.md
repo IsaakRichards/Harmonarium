@@ -69,6 +69,22 @@ Then add these repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PAS
 
 ## Sailfish OS
 
+### Built for the Commodore Callback 8020
+The Sailfish build is made first for the Callback's keypad and 3.25" 640×480 screen, where touch is off by default:
+
+- **Keypad mode** is on automatically: the focus ring is always visible and everything is reachable with keys.
+- **Number keys** work like a d-pad: **2 4 6 8** move, **5** selects.
+  - **At home:** **1** Shelf · **3** Lists · **0** Add books · **\*** Search · **#** Settings.
+  - **In a book:** **4/6** turn pages · **5** shows or hides the toolbars · **1** Contents · **3** Text settings · **\*/#** text size · **0** next theme.
+- **The phone's own keys:** **Back** closes the top layer (panel → toolbar → book), **Select** presses, and **Menu / left soft key** opens Settings (or Text settings in a book).
+- **Text fields** need **5/OK** to start typing, so number keys never fill a search box by accident. **Back** stops typing.
+- **Links to websites** inside books are disabled. The Callback has no browser and the app has no address bar to get back.
+- Keypad mode can be switched **On / Off / Automatic** in Settings, so it also works with the Android APK, keyboards and TV remotes.
+
+> Commodore blocks web browsers on the Callback at the system level. Starborn isn't a browser (it shows only its own pages and books), but whether its built-in web view is allowed is unconfirmed until it runs on a real Callback. If it's blocked, the Android APK (sideloaded from the microSD card or USB) has the same keypad mode.
+
+### Install and build
+
 `sailfish/` is a native Sailfish app: a Silica window around Sailfish's own WebView, running the same interface as every other build. A tiny server built into the app serves it on `127.0.0.1`, so storage and syncing behave exactly as in a browser.
 
 - **Install:** copy the RPM for your phone (`aarch64` on current devices, `armv7hl` on older ones) to the phone, allow untrusted software in Settings, and tap it in the file manager. Or `devel-su pkcon install-local harbour-starborn-*.rpm`.
