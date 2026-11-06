@@ -42,7 +42,15 @@ let panel = null; // {kind:'book', title} | {kind:'settings'}
 let confirmRemove = false, pickState = null;
 const connected = () => !!(cfg().url && cfg().token);
 
-const doneIdx = () => { const i = lists.findIndex(l => /complet|read|done|finish/i.test(l.name)); return i < 0 ? 0 : i; };
+// The "finished" list: an exact name like "Completed" or "Read" wins; otherwise any name about
+// finishing, but never one about reading in progress or later ("Reading now", "To read", "Want to read").
+const DONE_EXACT = /^\s*(completed?|read|done|finished|already read|have read)\s*$/i;
+const isDoneName = n => !/reading|to.?read|want|tbr|queue|next|later/i.test(n) && /complet|finish|done|\bread\b/i.test(n);
+const doneIdx = () => {
+  let i = lists.findIndex(l => DONE_EXACT.test(l.name));
+  if (i < 0) i = lists.findIndex(l => isDoneName(l.name));
+  return i < 0 ? 0 : i;
+};
 const queueIdx = () => { const i = lists.findIndex(l => /queue|tbr|next|want|to read/i.test(l.name)); return i < 0 ? (lists.length > 1 ? 1 : 0) : i; };
 const allSeries = () => [...new Set(lists.flatMap(l => l.items.map(i => i.series)).filter(Boolean))];
 const findBook = title => { for (let l = 0; l < lists.length; l++) { const i = lists[l].items.findIndex(x => norm(x.title) === norm(title)); if (i >= 0) return { l, i, it: lists[l].items[i] }; } return null; };

@@ -455,3 +455,16 @@ body[data-rtheme="dark"] .swatch.dark, body[data-rtheme="black"] .swatch.black {
 #toc-list a { display: block; padding: 10px 14px; color: inherit; text-decoration: none; font-size: 14px; }
 #toc-list a:hover { background: rgba(255, 255, 255, 0.06); }
 #toc-list .hint { padding: 14px; }
+
+/* phones: three covers across, like a real bookshelf */
+@media (max-width: 560px) {
+  .lib-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 18px 12px; }
+  .cv.lib-cv { padding: 7px; }
+  .cv.lib-cv .cv-t { font-size: 12px; }
+  .lib-title { font-size: 13px; }
+  .lib-author, .lib-sub { font-size: 11px; }
+  .lib-sub { white-space: normal; }
+  .lib-more { width: 24px; height: 24px; font-size: 12px; top: 4px; left: 4px; }
+  .lib-ahead { top: 5px; right: 5px; font-size: 10px; }
+  .shelf-only .toolbar .hint { display: none; }
+}
