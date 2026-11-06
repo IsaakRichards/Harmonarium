@@ -1,0 +1,18 @@
+[package]
+name = "kosmiclitsync"
+version = "0.1.0"
+description = "EPUB reader with Google Sheet progress sync"
+authors = ["Isaak Richards"]
+edition = "2021"
+
+[lib]
+# The _lib suffix avoids a name clash with the binary on Windows.
+name = "kosmiclitsync_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-http = "2"
