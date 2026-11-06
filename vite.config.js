@@ -14,7 +14,8 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   build: {
-    target: "es2021",
+    // Old enough for Sailfish OS's Gecko-based WebView as well as Tauri's webviews.
+    target: ["es2020", "firefox78", "chrome87", "safari14"],
     outDir: "dist",
     emptyOutDir: true,
   },

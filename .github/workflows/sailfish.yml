@@ -1,0 +1,62 @@
+name: Sailfish OS
+
+# Builds harbour-starborn RPMs for Sailfish OS phones (aarch64 for current devices,
+# armv7hl for older ones) using the Sailfish SDK in Docker.
+# Runs on every push to main, on pull requests, by hand, and from release.yml.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'sync/**', '.github/workflows/release.yml']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: sailfish-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+
+env:
+  SFOS_RELEASE: 5.0.0.43
+
+jobs:
+  build:
+    name: Sailfish OS (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, armv7hl]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the web app into sailfish/www
+        working-directory: repo
+        run: |
+          npm install
+          npm run build:sailfish
+
+      # The SDK action builds the project in the workspace root, so put the Sailfish
+      # project (with the web app inside it) there.
+      - name: Lay out the Sailfish project
+        run: |
+          cp -r repo/sailfish/. .
+          rm -rf repo
+          ls -la . www | head -40
+
+      - name: Build RPM
+        uses: coderus/github-sfos-build@sfos5
+        with:
+          release: ${{ env.SFOS_RELEASE }}
+          arch: ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Starborn-Sailfish-${{ matrix.arch }}
+          path: RPMS/*.rpm
+          if-no-files-found: error

@@ -12,7 +12,8 @@
     "icons": "tauri icon app-icon.png",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
-    "android:build": "tauri android build --apk"
+    "android:build": "tauri android build --apk",
+    "build:sailfish": "vite build --outDir sailfish/www --emptyOutDir"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

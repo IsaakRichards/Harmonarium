@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+X-Nemo-Application-Type=silica-qt5
+Icon=harbour-starborn
+Exec=harbour-starborn
+Name=Starborn
+Comment=EPUB reader and reading tracker synced through Google Sheets
+
+[X-Sailjail]
+OrganizationName=com.isaakrichards
+ApplicationName=starborn
+Permissions=Internet;WebView;Documents;Downloads;RemovableMedia

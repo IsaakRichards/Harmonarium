@@ -532,6 +532,8 @@ function closePanel(fromHistory) {
 window.addEventListener('popstate', () => closePanel(true));
 $('#scrim').addEventListener('click', () => closePanel());
 
+const later = (fn, ms = 60) => setTimeout(fn, ms);
+
 function renderPanel() {
   const p = $('#panel'); if (!panel || p.hidden) return;
   const key = panel.kind + ':' + (panel.title || '');
@@ -540,7 +542,7 @@ function renderPanel() {
   p.dataset.for = key;
   if (panel.kind === 'settings') return renderSettings(p);
   const f = findBook(panel.title); if (!f) { closePanel(); return; }
-  const { it, l } = f, m = meta[slug(it.title)] || {}, { main, note } = splitTitle(it.title);
+  const { it, l, i } = f, m = meta[slug(it.title)] || {}, { main, note } = splitTitle(it.title);
   const metaLine = [m.author, m.year, m.pages ? m.pages + ' pages' : ''].filter(Boolean).join(' · ');
   let desc = m.desc || '';
   if (!desc) loadDesc(it.title);
@@ -557,7 +559,7 @@ function renderPanel() {
     <hr class="sep">
     <div class="field"><label for="p-title">Title (as written in the sheet)</label><input id="p-title" value="${esc(it.title)}"></div>
     <div class="field"><label for="p-series">Series</label><input id="p-series" list="p-serieslist" value="${esc(it.series)}" placeholder="Standalone"><datalist id="p-serieslist">${allSeries().map(s => `<option value="${esc(s)}">`).join('')}</datalist></div>
-    <div class="field"><span class="lbl">Move to</span><div class="row start">${lists.map((L, li) => li === l ? '' : `<button class="btn small" data-move="${li}">${esc(L.name)}</button>`).join('')}<button class="btn small" data-top>Top of ${esc(lists[l].name)}</button></div></div>
+    <div class="field"><span class="lbl">Move to</span><div class="row start">${lists.map((L, li) => li === l ? '' : `<button class="btn small" data-move="${li}">${esc(L.name)}</button>`).join('')}<button class="btn small" data-top>Top of ${esc(lists[l].name)}</button><button class="btn small" data-up${i === 0 ? ' disabled' : ''}>Move up</button><button class="btn small" data-down${i === lists[l].items.length - 1 ? ' disabled' : ''}>Move down</button></div></div>
     <div class="row"><button class="btn small danger" data-remove>${confirmRemove ? 'Tap again to remove' : 'Remove from list'}</button></div>`;
 }
 function renderPicks() {
@@ -651,6 +653,15 @@ $('#panel').addEventListener('click', async e => {
   const mv = e.target.closest('[data-move]');
   if (mv) { const to = +mv.dataset.move; lists[f.l].items.splice(f.i, 1); lists[to].items.push(f.it); changed(); if (to === doneIdx()) meteor(); toast(`Moved to ${lists[to].name}`); return; }
   if (e.target.closest('[data-top]')) { lists[f.l].items.splice(f.i, 1); lists[f.l].items.unshift(f.it); changed(); return; }
+  const step = e.target.closest('[data-up]') ? -1 : e.target.closest('[data-down]') ? 1 : 0;
+  if (step) {
+    const items = lists[f.l].items, j = f.i + step;
+    if (j < 0 || j >= items.length) return;
+    [items[f.i], items[j]] = [items[j], items[f.i]];
+    $('#panel').dataset.for = ''; changed();
+    later(() => $(step < 0 ? '#panel [data-up]' : '#panel [data-down]')?.focus(), 150);
+    return;
+  }
   if (e.target.closest('[data-remove]')) {
     if (!confirmRemove) { confirmRemove = true; $('#panel').dataset.for = ''; renderPanel(); return; }
     const { l, i, it } = f; lists[l].items.splice(i, 1); closePanel(); changed();

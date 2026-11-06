@@ -20,7 +20,7 @@ let lastSavedCfi = null;
 let holdSaves = false; // true while we check the sheet on open
 let initialCfi = null; // where the book first landed, so merely opening never counts as reading
 let pendingRemote = null;
-let hooks = { close: () => {}, onFinished: () => {} };
+let hooks = { close: () => {}, onFinished: () => {}, onKey: () => {} };
 let finishOffered = false;
 
 const $ = (id) => document.getElementById(id);
@@ -66,7 +66,7 @@ export function init(h) {
     hideBanner();
   });
 
-  document.addEventListener("keydown", onKey);
+  // Keys are handled by dpad.js (see api() below).
   // Re-paginate on rotation / window resize.
   window.addEventListener("resize", () => rendition?.resize());
 }
@@ -76,12 +76,22 @@ function toggle(id) {
   $(id).classList.toggle("hidden");
 }
 
-function onKey(e) {
-  if (!rendition || !document.body.classList.contains("reading")) return;
-  if (document.getElementById("panel") && !document.getElementById("panel").hidden) return;
-  if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); rendition.next(); }
-  else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); rendition.prev(); }
-  else if (e.key === "Escape") closeBook();
+/** What the d-pad navigator needs to drive the reader. */
+export const api = {
+  next: () => rendition?.next(),
+  prev: () => rendition?.prev(),
+  barsVisible: () => !document.body.classList.contains("immersive"),
+  showBars: () => document.body.classList.remove("immersive"),
+  hideBars: () => { closeOverlays(); document.body.classList.add("immersive"); },
+  overlayOpen: () => ["toc-drawer", "aa-panel", "sync-banner"].some((id) => !$(id).classList.contains("hidden")),
+  closeOverlays,
+  close: () => closeBook(),
+};
+
+function closeOverlays() {
+  $("toc-drawer").classList.add("hidden");
+  $("aa-panel").classList.add("hidden");
+  if (pendingRemote) hideBanner();
 }
 
 // ------------------------------------------------------------------ open
@@ -340,7 +350,8 @@ function wireGestures() {
     $("toc-drawer").classList.add("hidden");
     $("aa-panel").classList.add("hidden");
   });
-  rendition.on("keydown", onKey);
+  // Keys pressed while the book's frame has focus.
+  rendition.on("keydown", (e) => hooks.onKey(e));
 }
 
 // ---------------------------------------------------------------- close

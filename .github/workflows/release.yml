@@ -23,10 +23,12 @@ jobs:
   android:
     uses: ./.github/workflows/android.yml
     secrets: inherit
+  sailfish:
+    uses: ./.github/workflows/sailfish.yml
 
   publish:
     name: Publish release
-    needs: [linux, windows, android]
+    needs: [linux, windows, android, sailfish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -50,6 +52,7 @@ jobs:
           body: |
             **Which file do I want?**
             - **Android:** `Starborn.apk`
+            - **Sailfish OS:** `harbour-starborn-…aarch64.rpm` (newer phones) or `…armv7hl.rpm` (older ones)
             - **Windows:** `Starborn_…_x64-setup.exe` (or the `.msi`)
             - **Linux:** `.AppImage` runs on any distro · `.deb` for Ubuntu/Mint/Debian · `.rpm` for Fedora
           files: release/*

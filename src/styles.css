@@ -468,3 +468,32 @@ body[data-rtheme="dark"] .swatch.dark, body[data-rtheme="black"] .swatch.black {
   .lib-ahead { top: 5px; right: 5px; font-size: 10px; }
   .shelf-only .toolbar .hint { display: none; }
 }
+
+/* ---------- d-pad focus ring (only after a d-pad / arrow key is used) ---------- */
+body.dpad :focus { outline: 2px solid var(--gold); outline-offset: 3px; box-shadow: 0 0 0 5px rgba(255, 199, 104, 0.18), 0 0 22px rgba(255, 199, 104, 0.45); }
+body.dpad .lib-open:focus { outline: none; box-shadow: none; }
+body.dpad .lib-open:focus .cv { outline: 3px solid var(--gold); outline-offset: 3px; box-shadow: 0 0 26px rgba(255, 199, 104, 0.55); transform: translateY(-3px); }
+body.dpad .lib-card:focus-within .lib-more { opacity: 1; }
+body.dpad.reading .reader-bar :focus, body.dpad.reading .reader-foot :focus { outline-color: #d9a441; }
+body:not(.dpad) :focus { outline: none; }
+@supports selector(:focus-visible) { body:not(.dpad) :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; } }
+
+/* ---------- older engines (e.g. Sailfish's Gecko) without aspect-ratio ---------- */
+@supports not (aspect-ratio: 2 / 3) {
+  .cv.lib-cv, .board.covers .cv.s { height: 0 !important; padding: 0 0 150% 0 !important; }
+  .cv.lib-cv .cv-t, .board.covers .cv.s .cv-t { position: absolute; left: 8px; right: 8px; bottom: 8px; }
+  .pick { height: 0; padding: 0 0 150% 0; }
+  .pick img { position: absolute; top: 0; left: 0; }
+}
+
+/* ---------- Sailfish: books found on the device ---------- */
+.dev-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.dev-book {
+  text-align: left; border: 1px solid var(--edge); background: rgba(7, 9, 20, 0.45); border-radius: 12px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; color: var(--star);
+}
+.dev-book:hover { border-color: var(--edge-hi); }
+.dev-book.have { opacity: 0.6; }
+.dev-name { font-weight: 600; font-size: 14px; }
+.dev-meta { font-size: 12px; color: var(--dim); }
+.dev-meta b { color: var(--gold); font-weight: 600; }

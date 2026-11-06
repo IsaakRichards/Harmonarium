@@ -2,7 +2,7 @@
 
 <h1 align="center">Starborn</h1>
 
-<p align="center">A galaxy-themed EPUB reader and reading tracker for <b>Android, Linux and Windows</b>.<br>
+<p align="center">A galaxy-themed EPUB reader and reading tracker for <b>Android, Sailfish OS, Linux and Windows</b>.<br>
 Your lists and your place in every book live in a Google Sheet that you own.</p>
 
 > *Starborn* is a working name. It is the merger of KosmicLitSync (the reader) and
@@ -22,6 +22,9 @@ Your lists and your place in every book live in a Google Sheet that you own.</p>
 - **Covers and details** come from Open Library, with Google Books as a backup. You can pick a different edition's cover.
 - **Find books** in Open Library and Google Books, then drag them onto a list.
 - **Series systems:** orbit rings show how much of each series you've read.
+
+### Touch, mouse, keyboard, d-pad or controller
+Everything works without touch: **arrow keys / d-pad** move a gold focus ring, **OK / Enter** presses, **Back / Esc / Backspace** closes the top layer. In a book, ←/→ turn pages, ↑/↓ bring up the toolbars, and OK hides or shows them. Game controllers work too (d-pad or left stick, A = OK, B = Back, LB/RB = page turn). Lists can be reordered with **Move up / Move down** in a book's panel, no dragging needed.
 
 ### Where the two meet
 - A book on your lists that you also have as an EPUB shows **📖 42%**, and its panel has **Read now**.
@@ -43,6 +46,7 @@ Each platform has its own build pipeline in GitHub Actions:
 | **Linux** (`linux.yml`) | `.AppImage` (any distro), `.deb` (Ubuntu/Mint/Debian), `.rpm` (Fedora) | every push to `main`, PRs, by hand |
 | **Windows** (`windows.yml`) | `-setup.exe` installer and `.msi` | every push to `main`, PRs, by hand |
 | **Android** (`android.yml`) | signed universal `Starborn.apk` | every push to `main`, PRs, by hand |
+| **Sailfish OS** (`sailfish.yml`) | `harbour-starborn` RPMs for `aarch64` and `armv7hl` | every push to `main`, PRs, by hand |
 | **Release** (`release.yml`) | runs all three, then publishes one GitHub release with every file | pushing a `v*` tag, or by hand |
 
 Builds from a push are under that run's **Artifacts** in the Actions tab. You can run any single platform from **Actions → (workflow) → Run workflow**. To publish a release:
@@ -63,6 +67,17 @@ base64 -w0 sb.jks   # copy the output
 
 Then add these repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`sb`) and `ANDROID_KEY_PASSWORD`. Keep `sb.jks` out of the repo.
 
+## Sailfish OS
+
+`sailfish/` is a native Sailfish app: a Silica window around Sailfish's own WebView, running the same interface as every other build. A tiny server built into the app serves it on `127.0.0.1`, so storage and syncing behave exactly as in a browser.
+
+- **Install:** copy the RPM for your phone (`aarch64` on current devices, `armv7hl` on older ones) to the phone, allow untrusted software in Settings, and tap it in the file manager. Or `devel-su pkcon install-local harbour-starborn-*.rpm`.
+- **Adding books:** **+ Add books** lists the EPUBs in Documents, Downloads, a `~/Books` folder and memory cards; tap one, or **Add all new**.
+- **Build it yourself** with the Sailfish SDK: `npm run build:sailfish`, then open `sailfish/harbour-starborn.pro` in the SDK (or `sfdk build` inside `sailfish/`).
+- Not for the Jolla Store (Harbour) as is: it's meant for OpenRepos, Chum, or direct install.
+
+Prefer not to install anything? The Android APK also runs under Sailfish's Android AppSupport.
+
 ## Develop
 
 Starborn is built with [Tauri 2](https://tauri.app), Vite, plain JavaScript and [epub.js](https://github.com/futurepress/epub.js). You need Node 20+, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
@@ -80,13 +95,16 @@ npm run android:dev
 ```
 index.html          app shell: header + tabs, Shelf, Lists, reader, shared panel
 src/main.js         boot, tabs, and the wiring between Shelf and Lists
+src/dpad.js         d-pad / keyboard / gamepad navigation (focus ring, reader keys)
+src/native.js       what a native shell offers the page (Sailfish: books on the device)
 src/library.js      Shelf: EPUB import (SHA-256 identity), cards, "ahead elsewhere" badges
 src/reader.js       epub.js reader, gestures, themes, progress saving, end-of-book hook
 src/lists.js        Lists: the tracker (sheet sync, covers, search, drag and drop, starfield) + Settings panel
 src/sync.js         reading-position sync with an offline outbox
 src/db.js           IndexedDB storage for books, files, positions and settings
 sync/Code.gs        the one Apps Script that serves both lists and progress
-src-tauri/          native shell (HTTP plugin) and icons
+src-tauri/          Tauri shell for Linux, Windows and Android (HTTP plugin) and icons
+sailfish/           Sailfish OS app: Qt/QML WebView shell + local server, RPM spec
 ```
 
 ## Roadmap

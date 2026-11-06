@@ -4,6 +4,7 @@ import * as library from "./library.js";
 import * as reader from "./reader.js";
 import * as sync from "./sync.js";
 import * as lists from "./lists.js";
+import * as dpad from "./dpad.js";
 import { toast } from "./util.js";
 
 const TAB_KEY = "sb-tab";
@@ -28,6 +29,8 @@ function showReader(on) {
 }
 
 async function openBook(id) {
+  dpad.rememberFocus();
+  dpad.focusPage();
   reader.syncPanelState();
   showReader(true);
   const ok = await reader.open(id).catch((err) => {
@@ -35,7 +38,7 @@ async function openBook(id) {
     toast("This book could not be opened");
     return false;
   });
-  if (!ok) showReader(false);
+  if (!ok) { showReader(false); dpad.restoreFocus(); }
 }
 
 async function boot() {
@@ -47,9 +50,11 @@ async function boot() {
     listFor: (title) => lists.listFor(title),
   });
   reader.init({
-    close: () => { showReader(false); library.render(); },
+    close: async () => { showReader(false); await library.render(); dpad.restoreFocus(); },
     onFinished: (title) => lists.offerFinish(title),
+    onKey: (e) => dpad.handle(e),
   });
+  dpad.init(reader.api);
   lists.init({
     openBook,
     onSyncClick: () => library.refreshRemote(true),
