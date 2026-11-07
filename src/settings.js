@@ -13,6 +13,7 @@ const DEFAULTS = {
   lineHeight: "",
   sort: "recent",
   keypadMode: "auto", // "auto" | "on" | "off"
+  pageTurn: "slide",  // "slide" | "fade" | "none"
 };
 
 let current = null;

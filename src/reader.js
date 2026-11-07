@@ -3,6 +3,7 @@ import * as db from "./db.js";
 import * as settings from "./settings.js";
 import * as sync from "./sync.js";
 import { escapeHtml, pct, timeAgo, toast } from "./util.js";
+import * as pageturn from "./pageturn.js";
 
 const THEMES = {
   light: { bg: "#fbfaf7", fg: "#1d1b18", link: "#3b5bdb" },
@@ -22,6 +23,7 @@ let initialCfi = null; // where the book first landed, so merely opening never c
 let pendingRemote = null;
 let hooks = { close: () => {}, onFinished: () => {}, onKey: () => {} };
 let finishOffered = false;
+let turner = null;     // page-turn animator (pageturn.js)
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,8 +36,20 @@ export function init(h) {
   for (const b of document.querySelectorAll("[data-dismiss]")) {
     b.addEventListener("click", () => $(b.dataset.dismiss).classList.add("hidden"));
   }
-  $("tap-prev").addEventListener("click", () => rendition?.prev());
-  $("tap-next").addEventListener("click", () => rendition?.next());
+  // Edge tap zones: tap to turn; on touch they also let you drag the page from the edge.
+  for (const [id, dir] of [["tap-prev", -1], ["tap-next", 1]]) {
+    const z = $(id);
+    z.addEventListener("click", () => turn(dir));
+    z.addEventListener("touchstart", (e) => turner?.touch.start(e), { passive: true });
+    z.addEventListener("touchmove", (e) => turner?.touch.move(e), { passive: true });
+    z.addEventListener("touchend", (e) => turner?.touch.end(e), { passive: true });
+  }
+  // Mouse wheel / trackpad on desktop turns pages too.
+  $("viewer-wrap").addEventListener("wheel", onWheel, { passive: true });
+  $("page-turn").addEventListener("change", async (e) => {
+    await settings.update({ pageTurn: e.target.value });
+    if (rendition) await rebuild();
+  });
 
   $("font-dec").addEventListener("click", () => setFontSize(settings.get().fontSize - 10));
   $("font-inc").addEventListener("click", () => setFontSize(settings.get().fontSize + 10));
@@ -77,9 +91,24 @@ function toggle(id) {
 }
 
 /** What the d-pad navigator needs to drive the reader. */
+/** Turn a page (+1 forward, -1 back) with the chosen animation. */
+function turn(dir) {
+  if (!rendition) return;
+  if (turner) return turner.turn(dir);
+  return dir > 0 ? rendition.next() : rendition.prev();
+}
+
+let wheelAt = 0;
+function onWheel(e) {
+  const d = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  if (Math.abs(d) < 4 || Date.now() - wheelAt < 350) return;
+  wheelAt = Date.now();
+  turn(d > 0 ? 1 : -1);
+}
+
 export const api = {
-  next: () => rendition?.next(),
-  prev: () => rendition?.prev(),
+  next: () => turn(1),
+  prev: () => turn(-1),
   barsVisible: () => !document.body.classList.contains("immersive"),
   showBars: () => document.body.classList.remove("immersive"),
   hideBars: () => { closeOverlays(); document.body.classList.add("immersive"); },
@@ -129,31 +158,14 @@ export async function open(id) {
   toc = flattenToc(nav.toc);
   renderToc();
 
-  rendition = book.renderTo("viewer", {
-    width: "100%",
-    height: "100%",
-    flow: "paginated",
-    spread: "auto",
-    minSpreadWidth: 900,
-  });
-  for (const [name, t] of Object.entries(THEMES)) {
-    rendition.themes.register(name, {
-      body: { background: `${t.bg} !important`, color: `${t.fg} !important` },
-      "a, a:link, a:visited": { color: `${t.link} !important` },
-    });
-  }
-  rendition.themes.select(settings.get().theme);
-  rendition.themes.fontSize(`${settings.get().fontSize}%`);
-  rendition.hooks.content.register((contents) => { injectUserStyle(contents); guardLinks(contents); });
-
-  wireGestures();
-  rendition.on("relocated", onRelocated);
+  makeRendition();
 
   // Cached location index → accurate percentages immediately.
   const savedLocations = await db.get("locations", id);
   if (savedLocations) book.locations.load(savedLocations);
 
   await rendition.display(local?.cfi || undefined);
+  tuneManager();
 
   if (!savedLocations) {
     book.locations.generate(1600).then(async () => {
@@ -169,6 +181,52 @@ export async function open(id) {
   await db.put("books", { ...meta, lastOpenedAt: Date.now() });
   checkRemote(local); // runs in the background, then releases holdSaves
   return true;
+}
+
+/** Create the rendition for the current page-turn mode (slide needs epub.js's continuous manager). */
+function makeRendition() {
+  const mode = pageturn.MODES.includes(settings.get().pageTurn) ? settings.get().pageTurn : "slide";
+  rendition = book.renderTo("viewer", {
+    manager: pageturn.managerFor(mode),
+    width: "100%",
+    height: "100%",
+    flow: "paginated",
+    spread: "auto",
+    minSpreadWidth: 900,
+  });
+  for (const [name, t] of Object.entries(THEMES)) {
+    rendition.themes.register(name, {
+      body: { background: `${t.bg} !important`, color: `${t.fg} !important` },
+      "a, a:link, a:visited": { color: `${t.link} !important` },
+    });
+  }
+  rendition.themes.select(settings.get().theme);
+  rendition.themes.fontSize(`${settings.get().fontSize}%`);
+  rendition.hooks.content.register((contents) => {
+    injectUserStyle(contents);
+    guardLinks(contents);
+    contents.document.addEventListener("wheel", onWheel, { passive: true });
+  });
+  wireGestures(mode);
+  rendition.on("relocated", onRelocated);
+  turner = pageturn.attach(rendition, mode, $("viewer"));
+}
+
+/** Slide mode: load the next chapter a couple of pages early so sliding into it stays smooth. */
+function tuneManager() {
+  const m = rendition?.manager;
+  if (m && m.layout && turner?.mode === "slide") m.settings.offset = Math.max(500, m.layout.width * 2);
+}
+
+/** Switch page-turn mode on an open book, keeping the reader's place. */
+async function rebuild() {
+  const cfi = current?.cfi;
+  turner?.destroy(); turner = null;
+  try { rendition.destroy(); } catch { /* ignore */ }
+  $("viewer").innerHTML = "";
+  makeRendition();
+  await rendition.display(cfi || undefined);
+  tuneManager();
 }
 
 function enableSlider() {
@@ -227,6 +285,7 @@ function onRelocated(loc) {
   if (book.locations.length()) percent = book.locations.percentageFromCfi(cfi);
   else percent = book.spine.length ? loc.start.index / book.spine.length : 0;
   current = { cfi, percent, chapter: chapterFor(loc.start.href) };
+  $("viewer").dataset.cfi = cfi; // where the reader is (handy for tests and debugging)
   if (holdSaves && initialCfi === null) initialCfi = cfi;
   if (!holdSaves && !finishOffered && (loc.atEnd || (book.locations.length() && percent >= 0.995))) {
     finishOffered = true;
@@ -346,23 +405,27 @@ export function syncPanelState() {
   $("font-size-label").textContent = `${s.fontSize}%`;
   $("font-family").value = s.fontFamily;
   $("line-height").value = s.lineHeight;
+  $("page-turn").value = s.pageTurn || "slide";
 }
 
 // ------------------------------------------------------------ gestures
 
-function wireGestures() {
-  let startX = 0, startY = 0, startT = 0;
-  rendition.on("touchstart", (e) => {
-    const t = e.changedTouches[0];
-    startX = t.screenX; startY = t.screenY; startT = Date.now();
-  });
-  rendition.on("touchend", (e) => {
-    const t = e.changedTouches[0];
-    const dx = t.screenX - startX, dy = t.screenY - startY;
-    if (Date.now() - startT < 600 && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      dx < 0 ? rendition.next() : rendition.prev();
-    }
-  });
+function wireGestures(mode) {
+  // In slide mode the page follows the finger (pageturn.js); otherwise a swipe turns the page.
+  if (mode !== "slide") {
+    let startX = 0, startY = 0, startT = 0;
+    rendition.on("touchstart", (e) => {
+      const t = e.changedTouches[0];
+      startX = t.screenX; startY = t.screenY; startT = Date.now();
+    });
+    rendition.on("touchend", (e) => {
+      const t = e.changedTouches[0];
+      const dx = t.screenX - startX, dy = t.screenY - startY;
+      if (Date.now() - startT < 600 && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        turn(dx < 0 ? 1 : -1);
+      }
+    });
+  }
   rendition.on("click", (e) => {
     // Center tap toggles the bars; ignore taps on links or while selecting text.
     if (e.target?.closest?.("a")) return;
@@ -382,6 +445,7 @@ export async function closeBook() {
   const moved = current && current.cfi !== lastSavedCfi && (!holdSaves || current.cfi !== initialCfi);
   if (moved) await saveProgress();
   sync.flushNow();
+  turner?.destroy(); turner = null;
   try { rendition?.destroy(); } catch { /* ignore */ }
   try { book?.destroy(); } catch { /* ignore */ }
   book = rendition = meta = current = null;

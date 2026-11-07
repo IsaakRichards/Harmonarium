@@ -13,7 +13,8 @@
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --apk",
-    "build:sailfish": "vite build --outDir sailfish/www --emptyOutDir"
+    "build:sailfish": "vite build --outDir sailfish/www --emptyOutDir",
+    "test:reader": "vite build && node tests/e2e/reader.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -22,6 +23,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "playwright": "^1.48.0",
+    "jszip": "^3.10.1"
   }
 }

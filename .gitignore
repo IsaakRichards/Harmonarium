@@ -8,3 +8,4 @@ src-tauri/gen/
 .idea/
 sailfish/www/
 RPMS/
+test-results/
