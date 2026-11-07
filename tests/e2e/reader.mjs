@@ -55,7 +55,9 @@ const context = await browser.newContext({ viewport: { width: 412, height: 860 }
 const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
-page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
+// Known noise: the web fonts this test blocks, and Chrome's notice about epub.js's unload listener.
+const BENIGN = [/Failed to load resource: net::ERR_FAILED/, /Permissions policy violation: unload/];
+page.on("console", (m) => { if (m.type() === "error" && !BENIGN.some((re) => re.test(m.text()))) errors.push("console: " + m.text()); });
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 
 await page.goto("http://127.0.0.1:4173/");
