@@ -5,6 +5,7 @@ import * as settings from './settings.js';
 import { netFetch } from './sync.js';
 import { toast } from './util.js';
 import * as updater from './updater.js';
+import * as appearance from './appearance.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -608,6 +609,9 @@ function renderSettings(p) {
     <div class="field"><label for="s-device">This device's name</label><input id="s-device" value="${esc(st.deviceName)}" placeholder="e.g. Pixel, Dorm laptop" autocomplete="off"></div>
     <label class="check"><input id="s-autojump" type="checkbox"${st.autoJump ? ' checked' : ''}> Jump to a newer position from another device without asking</label>
     <hr class="sep">
+    <p class="p-kicker">Appearance</p>
+    <div class="modes" role="group" aria-label="Appearance">${appearance.MODES.map(m => `<button class="mode-btn" data-mode="${m.id}" aria-pressed="${appearance.get() === m.id}"><span class="mode-sw ${m.id}"></span>${m.name}</button>`).join('')}</div>
+    <hr class="sep">
     <p class="p-kicker">Controls</p>
     <div class="field"><label for="s-keypad">Keypad mode</label><select id="s-keypad">
       <option value="auto"${st.keypadMode === 'auto' ? ' selected' : ''}>Automatic (on for Sailfish phones and keypad devices)</option>
@@ -628,6 +632,12 @@ $('#panel').addEventListener('click', async e => {
   if (e.target.closest('[data-close]')) return closePanel();
   if (!panel) return;
   if (panel.kind === 'settings') {
+    const mb = e.target.closest('[data-mode]');
+    if (mb) {
+      appearance.set(mb.dataset.mode);
+      for (const b of $('#panel').querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b === mb));
+      return;
+    }
     if (e.target.closest('[data-connect]')) {
       const url = $('#s-url').value.trim(), token = $('#s-token').value.trim(), st = $('#s-status');
       if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { st.textContent = 'That doesn’t look like an Apps Script Web app URL. It starts with https://script.google.com/macros/s/'; return; }
@@ -732,16 +742,22 @@ const sky = (() => {
     }
     ctx.globalAlpha = 1;
   }
+  // Only the Space mode shows the sky; elsewhere the loop stops until Space comes back.
+  const space = () => document.documentElement.getAttribute('data-mode') === 'space';
+  let running = false;
   function loop(t) {
+    if (!space()) { running = false; return; }
     if (!document.hidden && t - last > 33) { last = t; draw(t); }
     requestAnimationFrame(loop);
   }
+  function start() { if (!reduce && !running && space()) { running = true; requestAnimationFrame(loop); } }
   window.addEventListener('resize', resize);
+  window.addEventListener('harmonarium:mode', start);
   resize();
-  if (!reduce) requestAnimationFrame(loop);
+  start();
   return {
     meteor() {
-      if (reduce) return;
+      if (reduce || !space()) return;
       const sp = 14, ang = (200 + Math.random() * 25) * Math.PI / 180;
       meteors.push({ x: w * (0.55 + Math.random() * 0.45), y: h * Math.random() * 0.3, vx: Math.cos(ang) * sp, vy: -Math.sin(ang) * sp, sp, life: 60 });
     },

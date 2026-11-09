@@ -22,6 +22,9 @@ Your lists and your place in every book live in a Google Sheet that you own.</p>
 - **Find books** in Open Library and Google Books, then drag them onto a list.
 - **Series systems:** orbit rings show how much of each series you've read.
 
+### Four looks
+**Settings → Appearance** switches the whole app between **Medieval** (parchment, ink, gold leaf and Cinzel capitals), **Space** (the drifting starfield), **Light** and **Dark**. Each device remembers its own choice. Books keep their own reading themes (Day, Parchment, Night, Midnight).
+
 ### Touch, mouse, keyboard, d-pad or controller
 Everything works without touch: **arrow keys / d-pad** move a gold focus ring, **OK / Enter** presses, **Back / Esc / Backspace** closes the top layer. In a book, ←/→ turn pages, ↑/↓ bring up the toolbars, and OK hides or shows them. Game controllers work too (d-pad or left stick, A = OK, B = Back, LB/RB = page turn). Lists can be reordered with **Move up / Move down** in a book's panel, no dragging needed.
 
