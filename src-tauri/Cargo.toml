@@ -16,6 +16,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-http = "2"
+# tauri::generate_context! writes the plugins section of tauri.conf.json as serde_json values.
+serde_json = "1"
 
 # In-app updates on Windows and Linux (AppImage); .deb/.rpm installs open the releases page instead.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
