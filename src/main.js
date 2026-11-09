@@ -7,6 +7,7 @@ import * as lists from "./lists.js";
 import * as dpad from "./dpad.js";
 import { toast } from "./util.js";
 import * as native from "./native.js";
+import * as updater from "./updater.js";
 
 const TAB_KEY = "sb-tab";
 
@@ -88,6 +89,7 @@ async function boot() {
   await library.render();
   sync.flushNow(); // push reading positions left over from last time
   library.refreshRemote(false);
+  updater.autoCheck(toast, () => lists.openSettings()); // Android: once a day, offers new releases
 }
 
 boot();

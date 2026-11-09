@@ -18,13 +18,21 @@ permissions:
 jobs:
   linux:
     uses: ./.github/workflows/linux.yml
+    with:
+      version: ${{ inputs.tag || github.ref_name }}
   windows:
     uses: ./.github/workflows/windows.yml
+    with:
+      version: ${{ inputs.tag || github.ref_name }}
   android:
     uses: ./.github/workflows/android.yml
     secrets: inherit
+    with:
+      version: ${{ inputs.tag || github.ref_name }}
   sailfish:
     uses: ./.github/workflows/sailfish.yml
+    with:
+      version: ${{ inputs.tag || github.ref_name }}
 
   publish:
     name: Publish release

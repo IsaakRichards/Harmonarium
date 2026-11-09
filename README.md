@@ -67,6 +67,15 @@ base64 -w0 sb.jks   # copy the output
 
 Then add these repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`sb`) and `ANDROID_KEY_PASSWORD`. Keep `sb.jks` out of the repo.
 
+### In-app updates (Android)
+**Settings → Updates** checks this repo's latest GitHub release and, when it is newer, downloads its `Starborn.apk` and opens Android's installer. Starborn also checks quietly once a day at launch and offers the update in a toast. The first time, Android asks you to allow **Install unknown apps** for Starborn.
+
+For it to work:
+- Publish releases with a `v*` tag (as above). The release workflow stamps that version into every build, so there's no need to bump version numbers by hand. Drafts and pre-releases are ignored.
+- Set the signing secrets above. Android refuses an update signed with a different key.
+
+The native half lives in [`src-tauri/android/`](src-tauri/android) and is added to the generated Android project by `scripts/android-overlay.mjs` (run it after `npm run android:init` when building locally).
+
 ## Sailfish OS
 
 ### Built for the Commodore Callback 8020

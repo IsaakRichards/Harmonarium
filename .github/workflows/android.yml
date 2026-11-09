@@ -13,6 +13,11 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      version:
+        description: Version to stamp into the build (e.g. v0.3.0); release.yml passes the tag
+        type: string
+        required: false
 
 concurrency:
   group: android-${{ github.ref }}
@@ -28,6 +33,10 @@ jobs:
       PLATFORM: android-35
     steps:
       - uses: actions/checkout@v4
+
+      - name: Stamp the release version
+        if: inputs.version
+        run: node scripts/set-version.mjs "${{ inputs.version }}"
 
       - uses: actions/setup-java@v5
         with:
@@ -61,6 +70,7 @@ jobs:
         run: |
           npx tauri android init --ci
           npx tauri icon app-icon.png
+          node scripts/android-overlay.mjs   # in-app updater (see src-tauri/android/)
 
       - name: Build APK
         run: npx tauri android build --apk --ci

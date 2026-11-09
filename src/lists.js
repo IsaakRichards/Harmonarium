@@ -4,8 +4,8 @@
 import * as settings from './settings.js';
 import { netFetch } from './sync.js';
 import { toast } from './util.js';
+import * as updater from './updater.js';
 
-const VERSION = '0.2.0';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const hash = s => { let h = 5381; for (const c of String(s)) h = ((h << 5) + h + c.charCodeAt(0)) >>> 0; return h; };
@@ -620,7 +620,9 @@ function renderSettings(p) {
     <p class="p-desc">List covers come from Open Library, with Google Books as a backup. ${n} of ${lists.reduce((a, L) => a + L.items.length, 0)} books have one.</p>
     <div class="row start"><button class="btn small" data-recovers>Look for missing covers again</button></div>
     <hr class="sep">
-    <p class="via">Starborn ${VERSION}</p>`;
+    <div id="s-update"></div>${updater.available() ? '<hr class="sep">' : ''}
+    <p class="via">Starborn ${esc(updater.currentVersion())}</p>`;
+  updater.mount(p.querySelector('#s-update'));
 }
 $('#panel').addEventListener('click', async e => {
   if (e.target.closest('[data-close]')) return closePanel();

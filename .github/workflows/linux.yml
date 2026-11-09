@@ -9,6 +9,11 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      version:
+        description: Version to stamp into the build (e.g. v0.3.0); release.yml passes the tag
+        type: string
+        required: false
 
 concurrency:
   group: linux-${{ github.ref }}
@@ -21,6 +26,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Stamp the release version
+        if: inputs.version
+        run: node scripts/set-version.mjs "${{ inputs.version }}"
 
       - name: System libraries for Tauri
         run: |
