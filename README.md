@@ -5,7 +5,7 @@
 <p align="center">A galaxy-themed EPUB reader and reading tracker for <b>Android, Sailfish OS, Linux and Windows</b>.<br>
 Your lists and your place in every book live in a Google Sheet that you own.</p>
 
-*The name joins **harmony** and **armarium**, the cabinet of books in old libraries. The emblem's source is [`app-icon.svg`](app-icon.svg).*
+*The name joins **harmony** and **armarium**, the cabinet of books in old libraries. The emblem ([`app-icon.svg`](app-icon.svg)) is a pitch wheel written in Elder Futhark runes, with a harmony curve at its heart, set in a Gothic bookcase.*
 
 ## What it does
 
