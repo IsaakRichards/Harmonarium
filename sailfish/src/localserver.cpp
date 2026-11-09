@@ -1,6 +1,7 @@
 #include "localserver.h"
 
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -9,7 +10,10 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QStandardPaths>
+#include <QSysInfo>
 #include <QTcpSocket>
 #include <QUrlQuery>
 #include <QUuid>
@@ -18,6 +22,8 @@ namespace {
 
 const int kMaxHeaderBytes = 16 * 1024;
 const int kMaxBooks = 2000;
+// The updater only ever downloads release files from Starborn's own GitHub repository.
+const char kReleasePrefix[] = "https://github.com/IsaakRichards/Starborn/releases/download/";
 
 QByteArray mimeFor(const QString &path)
 {
@@ -148,6 +154,19 @@ void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QBy
             respond(socket, 200, "application/epub+zip", f.readAll(), head, true);
             return;
         }
+        if (path == QLatin1String("/__update/start")) {
+            const QString target = query.queryItemValue(QStringLiteral("url"), QUrl::FullyDecoded);
+            respond(socket, 200, "application/json", updateStart(target), head, true);
+            return;
+        }
+        if (path == QLatin1String("/__update/status")) {
+            respond(socket, 200, "application/json", updateStatus(), head, true);
+            return;
+        }
+        if (path == QLatin1String("/__update/open")) {
+            respond(socket, 200, "application/json", updateOpen(), head, true);
+            return;
+        }
         respond(socket, 404, "text/plain", "Unknown endpoint", head);
         return;
     }
@@ -240,4 +259,124 @@ QByteArray LocalServer::listBooks() const
     root.insert(QStringLiteral("ok"), true);
     root.insert(QStringLiteral("books"), books);
     return QJsonDocument(root).toJson(QJsonDocument::Compact);
+}
+
+// ---- in-app updater ---------------------------------------------------------------------
+
+QByteArray LocalServer::updateStart(const QString &target)
+{
+    QJsonObject o;
+    if (m_updState == QLatin1String("downloading")) {
+        o.insert(QStringLiteral("ok"), false);
+        o.insert(QStringLiteral("error"), QStringLiteral("A download is already running"));
+        return QJsonDocument(o).toJson(QJsonDocument::Compact);
+    }
+    const QUrl url(target);
+    const QString name = url.fileName();
+    if (!target.startsWith(QLatin1String(kReleasePrefix)) || !name.endsWith(QLatin1String(".rpm"))
+            || name.contains(QLatin1Char('/'))) {
+        o.insert(QStringLiteral("ok"), false);
+        o.insert(QStringLiteral("error"), QStringLiteral("Not a Starborn release RPM"));
+        return QJsonDocument(o).toJson(QJsonDocument::Compact);
+    }
+
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (dir.isEmpty())
+        dir = QDir::homePath() + QStringLiteral("/Downloads");
+    QDir().mkpath(dir);
+    m_updFile = dir + QLatin1Char('/') + name;
+    QFile::remove(m_updFile);
+    QFile::remove(m_updFile + QStringLiteral(".part"));
+
+    m_partFile = new QFile(m_updFile + QStringLiteral(".part"), this);
+    if (!m_partFile->open(QIODevice::WriteOnly)) {
+        delete m_partFile;
+        m_partFile = nullptr;
+        updateFail(QStringLiteral("Couldn't write to ") + dir);
+        o.insert(QStringLiteral("ok"), false);
+        o.insert(QStringLiteral("error"), m_updError);
+        return QJsonDocument(o).toJson(QJsonDocument::Compact);
+    }
+
+    QNetworkRequest req(url);
+    req.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    req.setRawHeader("User-Agent", "Starborn-Sailfish");
+    m_reply = m_nam.get(req);
+    m_updState = QStringLiteral("downloading");
+    m_updPercent = -1;
+    m_updError.clear();
+
+    connect(m_reply, &QNetworkReply::readyRead, this, [this]() {
+        if (m_reply && m_partFile)
+            m_partFile->write(m_reply->readAll());
+    });
+    connect(m_reply, &QNetworkReply::downloadProgress, this, [this](qint64 got, qint64 total) {
+        m_updPercent = total > 0 ? int(got * 100 / total) : -1;
+    });
+    connect(m_reply, &QNetworkReply::finished, this, [this]() {
+        QNetworkReply *reply = m_reply;
+        m_reply = nullptr;
+        if (m_partFile) {
+            m_partFile->write(reply->readAll());
+            m_partFile->close();
+        }
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (reply->error() != QNetworkReply::NoError || status < 200 || status >= 300) {
+            updateFail(reply->error() != QNetworkReply::NoError ? reply->errorString()
+                                                                : QStringLiteral("HTTP %1").arg(status));
+        } else if (m_partFile && m_partFile->size() < 1024) {
+            updateFail(QStringLiteral("The download was empty"));
+        } else if (m_partFile && !m_partFile->rename(m_updFile)) {
+            updateFail(QStringLiteral("Couldn't save the download"));
+        } else {
+            m_updState = QStringLiteral("ready");
+            m_updPercent = 100;
+        }
+        if (m_partFile) {
+            m_partFile->deleteLater();
+            m_partFile = nullptr;
+        }
+        reply->deleteLater();
+    });
+
+    o.insert(QStringLiteral("ok"), true);
+    return QJsonDocument(o).toJson(QJsonDocument::Compact);
+}
+
+void LocalServer::updateFail(const QString &error)
+{
+    if (m_partFile) {
+        m_partFile->close();
+        m_partFile->remove();
+    }
+    m_updState = QStringLiteral("error");
+    m_updError = error;
+}
+
+QByteArray LocalServer::updateStatus() const
+{
+    // RPM architecture names for this phone.
+    const QString cpu = QSysInfo::currentCpuArchitecture();
+    QString arch = cpu;
+    if (cpu == QLatin1String("arm64")) arch = QStringLiteral("aarch64");
+    else if (cpu == QLatin1String("arm")) arch = QStringLiteral("armv7hl");
+    else if (cpu == QLatin1String("i386")) arch = QStringLiteral("i486");
+
+    QJsonObject o;
+    o.insert(QStringLiteral("state"), m_updState);
+    o.insert(QStringLiteral("percent"), m_updPercent);
+    o.insert(QStringLiteral("file"), m_updFile);
+    o.insert(QStringLiteral("error"), m_updError);
+    o.insert(QStringLiteral("arch"), arch);
+    return QJsonDocument(o).toJson(QJsonDocument::Compact);
+}
+
+QByteArray LocalServer::updateOpen()
+{
+    QJsonObject o;
+    const bool ok = m_updState == QLatin1String("ready") && QFile::exists(m_updFile)
+            && QDesktopServices::openUrl(QUrl::fromLocalFile(m_updFile));
+    o.insert(QStringLiteral("ok"), ok);
+    o.insert(QStringLiteral("file"), m_updFile);
+    return QJsonDocument(o).toJson(QJsonDocument::Compact);
 }

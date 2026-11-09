@@ -22,3 +22,17 @@ export async function readDeviceBook(book) {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return new File([await r.blob()], book.name, { type: "application/epub+zip" });
 }
+
+/* ---------- in-app updater (Sailfish): the shell downloads the RPM and opens it ---------- */
+
+async function updateCall(what, params = "") {
+  const r = await fetch(`/__update/${what}?t=${encodeURIComponent(token)}${params}`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+/** Starts downloading a release RPM into Downloads: { ok, error }. */
+export const updateStart = (url) => updateCall("start", `&url=${encodeURIComponent(url)}`);
+/** { state: idle|downloading|ready|error, percent, file, error, arch } */
+export const updateStatus = () => updateCall("status");
+/** Opens the downloaded RPM so Sailfish offers to install it: { ok, file }. */
+export const updateOpen = () => updateCall("open");

@@ -38,5 +38,16 @@
       "icons/icon.ico"
     ],
     "longDescription": "Read EPUBs, keep your reading lists, and pick up where you left off on any device, all synced through your own Google Sheet."
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5MjkxQjk5ODE2M0FGREMKUldUY3IyT0JtUnNwNmZvU0IyUjYvT0d0VUljdGJTTklGRVFsSGU4V2w2Nk5GYWRXNDVVSk92czkK",
+      "endpoints": [
+        "https://github.com/IsaakRichards/Starborn/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

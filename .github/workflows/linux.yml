@@ -48,8 +48,20 @@ jobs:
 
       - run: npm install
 
+      # With the updater signing key set (see README), also build the signed update files
+      # (.sig) that the in-app updater checks. Without it the build is the same as before.
       - name: Build
-        run: npx tauri build --bundles appimage,deb,rpm
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npx tauri build --bundles appimage,deb,rpm --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          else
+            echo "::notice::No TAURI_SIGNING_PRIVATE_KEY secret, so no signed update files. See README."
+            npx tauri build --bundles appimage,deb,rpm
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -58,4 +70,5 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/appimage/*.AppImage.sig
           if-no-files-found: error

@@ -67,14 +67,23 @@ base64 -w0 sb.jks   # copy the output
 
 Then add these repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`sb`) and `ANDROID_KEY_PASSWORD`. Keep `sb.jks` out of the repo.
 
-### In-app updates (Android)
-**Settings → Updates** checks this repo's latest GitHub release and, when it is newer, downloads its `Starborn.apk` and opens Android's installer. Starborn also checks quietly once a day at launch and offers the update in a toast. The first time, Android asks you to allow **Install unknown apps** for Starborn.
+### In-app updates
+**Settings → Updates** checks this repo's latest GitHub release. Starborn also checks quietly once a day at launch and offers any new version in a toast. How it installs depends on the platform:
+
+| Platform | What happens |
+| --- | --- |
+| **Android** | Downloads `Starborn.apk` and opens Android's installer. The first time, Android asks you to allow **Install unknown apps** for Starborn. |
+| **Windows** | Downloads the signed update, installs it and restarts Starborn. |
+| **Linux AppImage** | Downloads the signed update, swaps the AppImage in place and restarts. |
+| **Linux .deb / .rpm** | Opens the release page, since those belong to your package manager. Install the new file the same way. |
+| **Sailfish OS** | Downloads the RPM for your phone (aarch64 or armv7hl) into Downloads and opens it so Sailfish offers to install it. If the installer doesn't open, open the file from the Files app. |
 
 For it to work:
 - Publish releases with a `v*` tag (as above). The release workflow stamps that version into every build, so there's no need to bump version numbers by hand. Drafts and pre-releases are ignored.
-- Set the signing secrets above. Android refuses an update signed with a different key.
+- **Android:** set the signing secrets above. Android refuses an update signed with a different key.
+- **Windows and AppImage:** add the updater signing key as the repository secret `TAURI_SIGNING_PRIVATE_KEY` (the whole contents of the key file; this key has no password, so `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` can be left unset). Its public half is already in `src-tauri/tauri.conf.json`. With the secret set, builds also produce `.sig` files and the release gets a `latest.json`. Without it, desktop copies fall back to opening the release page. To use a key of your own instead, run `npx tauri signer generate -w starborn-updater.key`, put the new public key in `tauri.conf.json` under `plugins.updater.pubkey`, and store the private key as the secret. Keep the private key out of the repo, and don't lose it: copies already installed only accept updates signed with it.
 
-The native half lives in [`src-tauri/android/`](src-tauri/android) and is added to the generated Android project by `scripts/android-overlay.mjs` (run it after `npm run android:init` when building locally).
+The native pieces live in [`src-tauri/android/`](src-tauri/android) (Android, added to the generated project by `scripts/android-overlay.mjs`; run it after `npm run android:init` when building locally), `src-tauri/src/lib.rs` (desktop) and `sailfish/src/localserver.cpp` (Sailfish).
 
 ## Sailfish OS
 

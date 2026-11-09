@@ -1,11 +1,14 @@
 #ifndef LOCALSERVER_H
 #define LOCALSERVER_H
 
+#include <QNetworkAccessManager>
 #include <QObject>
 #include <QStringList>
 #include <QTcpServer>
 #include <QUrl>
 
+class QFile;
+class QNetworkReply;
 class QTcpSocket;
 
 // A tiny HTTP server bound to 127.0.0.1 that serves Starborn's web app to the WebView.
@@ -17,6 +20,9 @@ class QTcpSocket;
 //   GET /__books?t=TOKEN               JSON list of .epub files in Documents, Downloads, ~/Books
 //                                      and memory cards
 //   GET /__file?t=TOKEN&path=/abs.epub  the bytes of one of those files
+//   GET /__update/start?t=TOKEN&url=…   download a Starborn release RPM into Downloads
+//   GET /__update/status?t=TOKEN        JSON: state, percent, file, error and this phone's arch
+//   GET /__update/open?t=TOKEN          open the downloaded RPM so Sailfish offers to install it
 class LocalServer : public QObject
 {
     Q_OBJECT
@@ -41,10 +47,23 @@ private:
     QByteArray listBooks() const;
     QStringList bookRoots() const;
     bool isAllowedBook(const QString &path) const;
+    QByteArray updateStart(const QString &url);
+    QByteArray updateStatus() const;
+    QByteArray updateOpen();
+    void updateFail(const QString &error);
 
     QTcpServer m_server;
     QString m_root;   // canonical path of the www directory
     QString m_token;
+
+    // In-app updater
+    QNetworkAccessManager m_nam;
+    QNetworkReply *m_reply = nullptr;
+    QFile *m_partFile = nullptr;
+    QString m_updState = QStringLiteral("idle"); // idle | downloading | ready | error
+    int m_updPercent = -1;
+    QString m_updFile;
+    QString m_updError;
 };
 
 #endif // LOCALSERVER_H

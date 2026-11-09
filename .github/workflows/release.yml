@@ -18,10 +18,12 @@ permissions:
 jobs:
   linux:
     uses: ./.github/workflows/linux.yml
+    secrets: inherit
     with:
       version: ${{ inputs.tag || github.ref_name }}
   windows:
     uses: ./.github/workflows/windows.yml
+    secrets: inherit
     with:
       version: ${{ inputs.tag || github.ref_name }}
   android:
@@ -51,6 +53,14 @@ jobs:
           mkdir -p release
           find dist -type f -exec mv {} release/ \;
           ls -la release
+
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      # latest.json tells the desktop in-app updater where the signed update files are.
+      - name: Updater manifest
+        run: node repo/scripts/latest-json.mjs release "${{ inputs.tag || github.ref_name }}"
 
       - uses: softprops/action-gh-release@v2
         with:
