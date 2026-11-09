@@ -58,11 +58,11 @@ Pushes that only change docs (`*.md`) or the sheet script (`sync/`) skip the bui
 An update only installs over an older APK when both are signed with the same key. Without setup, each build uses a throwaway key. To keep one key:
 
 ```sh
-keytool -genkeypair -keystore sb.jks -alias sb -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 sb.jks   # copy the output
+keytool -genkeypair -keystore harmonarium.jks -alias harmonarium -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 harmonarium.jks   # copy the output
 ```
 
-Then add these repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`sb`) and `ANDROID_KEY_PASSWORD`. Keep `sb.jks` out of the repo.
+Then add these repository secrets: `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`harmonarium`) and `ANDROID_KEY_PASSWORD`. Keep `harmonarium.jks` out of the repo.
 
 ### In-app updates
 **Settings → Updates** checks this repo's latest GitHub release. Harmonarium also checks quietly once a day at launch and offers any new version in a toast. How it installs depends on the platform:
