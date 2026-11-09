@@ -92,17 +92,17 @@ jobs:
           else
             echo "::warning::No ANDROID_KEYSTORE_B64 secret, so this APK is signed with a throwaway key. Updates from a later build won't install over it. See README."
             keytool -genkeypair -keystore release.jks -alias sb -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass android -keypass android -dname "CN=Starborn"
+              -storepass android -keypass android -dname "CN=Harmonarium"
             STOREPASS=android; ALIAS=sb; KEYPASS=android
           fi
           "$BT/zipalign" -p -f 4 "$APK" aligned.apk
           "$BT/apksigner" sign --ks release.jks --ks-key-alias "$ALIAS" --ks-pass "pass:$STOREPASS" --key-pass "pass:$KEYPASS" \
-            --out Starborn.apk aligned.apk
-          "$BT/apksigner" verify Starborn.apk
+            --out Harmonarium.apk aligned.apk
+          "$BT/apksigner" verify Harmonarium.apk
           rm -f release.jks aligned.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Starborn-Android
-          path: Starborn.apk
+          name: Harmonarium-Android
+          path: Harmonarium.apk
           if-no-files-found: error

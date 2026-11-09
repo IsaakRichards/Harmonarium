@@ -1,5 +1,5 @@
 // D-pad navigation: arrow keys, OK/Enter and Back move a visible focus around the app,
-// so Starborn works with keypads, TV remotes, game controllers and phones with
+// so Harmonarium works with keypads, TV remotes, game controllers and phones with
 // hardware keys (Sailfish, Android) as well as with touch and mouse.
 //
 //   Arrows   move focus to the nearest control in that direction
@@ -13,7 +13,7 @@
 //   2 4 6 8 / 5   same as the arrows / OK
 //   Home          1 Shelf · 3 Lists · 0 Add books (Shelf) · * Search · # Settings
 //   Reader        1 Contents · 3 Text settings · * smaller text · # larger text · 0 next theme
-// and the phone's own keys (Back, Select, Menu / soft keys) arrive through window.starbornKey().
+// and the phone's own keys (Back, Select, Menu / soft keys) arrive through window.harmonariumKey().
 //
 // The focus ring only shows once a d-pad key is used; touch or the mouse hides it again.
 
@@ -66,8 +66,8 @@ export function init(readerApi, h = {}) {
   hooks = { ...hooks, ...h };
   document.addEventListener("keydown", (e) => handle(e), true);
   // Hardware keys a webview can't see (Back, Select, Menu, soft keys) are forwarded by
-  // the Sailfish shell as window.starbornKey("back" | "ok" | "menu" | …).
-  window.starbornKey = (name) => { handle(synthetic(NAMED[name] || name)); return true; };
+  // the Sailfish shell as window.harmonariumKey("back" | "ok" | "menu" | …).
+  window.harmonariumKey = (name) => { handle(synthetic(NAMED[name] || name)); return true; };
   // Never leave the app for a website: on keypad phones there's no way back.
   document.addEventListener("click", (e) => {
     const a = e.target.closest && e.target.closest("a[href]");

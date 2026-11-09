@@ -11,7 +11,7 @@ if (!dir || !tag) {
   console.error("usage: node scripts/latest-json.mjs <release-dir> <tag>");
   process.exit(1);
 }
-const base = `https://github.com/IsaakRichards/Starborn/releases/download/${tag}/`;
+const base = `https://github.com/IsaakRichards/Harmonarium/releases/download/${tag}/`;
 const files = fs.readdirSync(dir);
 
 function entry(test) {
@@ -39,7 +39,7 @@ if (!Object.keys(platforms).length) {
 }
 const out = {
   version: tag.replace(/^v/, ""),
-  notes: `Starborn ${tag}`,
+  notes: `Harmonarium ${tag}`,
   pub_date: new Date().toISOString(),
   platforms,
 };

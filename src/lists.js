@@ -1,4 +1,4 @@
-/* Starborn — Lists tab (the reading tracker, formerly KosmicLitTrack).
+/* Harmonarium — Lists tab (the reading tracker).
  * Lists live in the first tab of the Google Sheet as column pairs (list name, Series).
  * Also owns the side panel (book details and Settings). */
 import * as settings from './settings.js';
@@ -20,13 +20,13 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
 };
 const cfg = () => ({ url: settings.get()?.syncUrl || '', token: settings.get()?.syncKey || '' });
-let lists = store.get('sb-lists', []);
-let meta = store.get('sb-meta', {});
-let view = store.get('sb-view', 'rows');
-let sheetTitle = store.get('sb-title', '');
-const saveLists = () => store.set('sb-lists', lists);
+let lists = store.get('hm-lists', []);
+let meta = store.get('hm-meta', {});
+let view = store.get('hm-view', 'rows');
+let sheetTitle = store.get('hm-title', '');
+const saveLists = () => store.set('hm-lists', lists);
 let metaTimer = null;
-const saveMeta = () => { clearTimeout(metaTimer); metaTimer = setTimeout(() => store.set('sb-meta', meta), 400); };
+const saveMeta = () => { clearTimeout(metaTimer); metaTimer = setTimeout(() => store.set('hm-meta', meta), 400); };
 
 /* ---------- network (Tauri's HTTP plugin when available, else browser fetch) ---------- */
 async function getJSON(url, opts) {
@@ -36,7 +36,7 @@ async function getJSON(url, opts) {
 }
 
 /* ---------- state ---------- */
-let loaded = false, dirty = false, writing = false, writeTimer = null, lastSync = store.get('sb-lastsync', null), syncErr = null, errKind = null;
+let loaded = false, dirty = false, writing = false, writeTimer = null, lastSync = store.get('hm-lastsync', null), syncErr = null, errKind = null;
 let filterSeries = null, query = '', results = [], resultsState = null, searchSeq = 0;
 let panel = null; // {kind:'book', title} | {kind:'settings'}
 let confirmRemove = false, pickState = null;
@@ -98,8 +98,8 @@ async function bridge(method, body) {
 }
 function adopt(d) {
   const next = parse(d.values || []);
-  if (d.title) { sheetTitle = d.title; store.set('sb-title', sheetTitle); }
-  lastSync = Date.now(); store.set('sb-lastsync', lastSync);
+  if (d.title) { sheetTitle = d.title; store.set('hm-title', sheetTitle); }
+  lastSync = Date.now(); store.set('hm-lastsync', lastSync);
   syncErr = null; errKind = null; loaded = true;
   if (JSON.stringify(next) !== JSON.stringify(lists)) { lists = next; saveLists(); renderSoon(); } else { renderSync(); renderNotice(); renderHeader(); }
 }
@@ -346,8 +346,8 @@ $('#board').addEventListener('click', e => {
     toast(`${splitTitle(it.title).main} moved to ${lists[di].name}`, () => { const f = findBook(it.title); if (f) { lists[f.l].items.splice(f.i, 1); lists[l].items.splice(i, 0, it); changed(); } });
   } else if (e.target.closest('[data-open]')) openPanel({ kind: 'book', title: it.title });
 });
-$('#view-rows').addEventListener('click', () => { view = 'rows'; store.set('sb-view', view); render(); });
-$('#view-covers').addEventListener('click', () => { view = 'covers'; store.set('sb-view', view); render(); });
+$('#view-rows').addEventListener('click', () => { view = 'rows'; store.set('hm-view', view); render(); });
+$('#view-covers').addEventListener('click', () => { view = 'covers'; store.set('hm-view', view); render(); });
 
 /* ---------- finding new books ---------- */
 $('#q').addEventListener('input', e => { query = e.target.value; renderHeader(); renderBoard(); });
@@ -518,7 +518,7 @@ function openPanel(p) {
   const wasOpen = !!panel;
   panel = p; confirmRemove = false; pickState = null;
   $('#panel').hidden = false; $('#scrim').hidden = false; $('#panel').dataset.for = '';
-  if (!wasOpen) try { history.pushState({ kltPanel: 1 }, ''); } catch (e) {}
+  if (!wasOpen) try { history.pushState({ panelOpen: 1 }, ''); } catch (e) {}
   renderPanel();
   if (p.kind === 'book') loadDesc(p.title);
   $('#panel').scrollTop = 0;
@@ -527,7 +527,7 @@ function openPanel(p) {
 function closePanel(fromHistory) {
   if (!panel) return;
   panel = null; $('#panel').hidden = true; $('#scrim').hidden = true;
-  if (!fromHistory && history.state && history.state.kltPanel) try { history.back(); } catch (e) {}
+  if (!fromHistory && history.state && history.state.panelOpen) try { history.back(); } catch (e) {}
 }
 window.addEventListener('popstate', () => closePanel(true));
 $('#scrim').addEventListener('click', () => closePanel());
@@ -592,10 +592,10 @@ function renderSettings(p) {
   p.innerHTML = `<button class="btn small p-close" data-close>Close</button>
     <p class="p-kicker">Settings</p>
     <h2 class="p-h" style="text-align:left">Connect your Google Sheet</h2>
-    <p class="p-desc">One sheet holds both your lists (first tab) and your reading positions (a <code>Progress</code> tab Starborn adds).</p>
+    <p class="p-desc">One sheet holds both your lists (first tab) and your reading positions (a <code>Progress</code> tab Harmonarium adds).</p>
     <ol class="steps">
       <li>Open your sheet, then <b>Extensions → Apps Script</b>.</li>
-      <li>Replace the code with <code>sync/Code.gs</code> from the Starborn repo, and change <code>TOKEN</code> to a long random phrase.</li>
+      <li>Replace the code with <code>sync/Code.gs</code> from the Harmonarium repo, and change <code>TOKEN</code> to a long random phrase.</li>
       <li><b>Deploy → New deployment</b>, type <b>Web app</b>, execute as <b>Me</b>, access <b>Anyone</b>. Approve the permissions.</li>
       <li>Paste the Web app URL and your token here, on every device.</li>
     </ol>
@@ -621,7 +621,7 @@ function renderSettings(p) {
     <div class="row start"><button class="btn small" data-recovers>Look for missing covers again</button></div>
     <hr class="sep">
     <div id="s-update"></div>${updater.available() ? '<hr class="sep">' : ''}
-    <p class="via">Starborn ${esc(updater.currentVersion())}</p>`;
+    <p class="via">Harmonarium ${esc(updater.currentVersion())}</p>`;
   updater.mount(p.querySelector('#s-update'));
 }
 $('#panel').addEventListener('click', async e => {
@@ -636,13 +636,13 @@ $('#panel').addEventListener('click', async e => {
       try {
         const d = await bridge('GET');
         const sheetLists = parse(d.values || []);
-        if (!sheetLists.length && lists.some(L => L.items.length)) { if (d.title) { sheetTitle = d.title; store.set('sb-title', sheetTitle); } dirty = true; await flush(); }
+        if (!sheetLists.length && lists.some(L => L.items.length)) { if (d.title) { sheetTitle = d.title; store.set('hm-title', sheetTitle); } dirty = true; await flush(); }
         else adopt(d);
         $('#panel').dataset.for = ''; render(); toast('Connected to ' + (sheetTitle || 'your sheet'));
         hooks.onSettingsSaved();
       } catch (err) { await settings.update({ syncUrl: prev.url, syncKey: prev.token }); st.textContent = err.message; }
     } else if (e.target.closest('[data-disconnect]')) {
-      await settings.update({ syncUrl: '', syncKey: '' }); syncErr = null; dirty = false; lastSync = null; store.set('sb-lastsync', null);
+      await settings.update({ syncUrl: '', syncKey: '' }); syncErr = null; dirty = false; lastSync = null; store.set('hm-lastsync', null);
       $('#panel').dataset.for = ''; render(); toast('Disconnected. Everything stays on this device.');
     } else if (e.target.closest('[data-recovers]')) {
       Object.keys(meta).forEach(k => { if (meta[k].status === 'none' || meta[k].broken) delete meta[k]; });
@@ -681,7 +681,7 @@ $('#panel').addEventListener('change', async e => {
   if (panel && panel.kind === 'settings') {
     if (e.target.id === 's-device' && e.target.value.trim()) { await settings.update({ deviceName: e.target.value.trim() }); toast('Device name saved'); }
     else if (e.target.id === 's-autojump') await settings.update({ autoJump: e.target.checked });
-    else if (e.target.id === 's-keypad') { await settings.update({ keypadMode: e.target.value }); window.dispatchEvent(new Event('starborn:keypad')); }
+    else if (e.target.id === 's-keypad') { await settings.update({ keypadMode: e.target.value }); window.dispatchEvent(new Event('harmonarium:keypad')); }
     return;
   }
   if (!panel || panel.kind !== 'book') return;

@@ -1,6 +1,6 @@
 name: Sailfish OS
 
-# Builds harbour-starborn RPMs for Sailfish OS phones (aarch64 for current devices,
+# Builds harbour-harmonarium RPMs for Sailfish OS phones (aarch64 for current devices,
 # armv7hl for older ones) using the Sailfish SDK in Docker.
 # Runs on every push to main, on pull requests, by hand, and from release.yml.
 on:
@@ -67,6 +67,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Starborn-Sailfish-${{ matrix.arch }}
+          name: Harmonarium-Sailfish-${{ matrix.arch }}
           path: RPMS/*.rpm
           if-no-files-found: error

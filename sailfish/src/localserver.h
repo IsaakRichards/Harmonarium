@@ -11,7 +11,7 @@ class QFile;
 class QNetworkReply;
 class QTcpSocket;
 
-// A tiny HTTP server bound to 127.0.0.1 that serves Starborn's web app to the WebView.
+// A tiny HTTP server bound to 127.0.0.1 that serves Harmonarium's web app to the WebView.
 //
 // Serving over http://127.0.0.1 (instead of file://) gives the page a stable origin, so
 // IndexedDB, ES modules, fetch() to Google and crypto all behave as in a normal browser.
@@ -20,7 +20,7 @@ class QTcpSocket;
 //   GET /__books?t=TOKEN               JSON list of .epub files in Documents, Downloads, ~/Books
 //                                      and memory cards
 //   GET /__file?t=TOKEN&path=/abs.epub  the bytes of one of those files
-//   GET /__update/start?t=TOKEN&url=…   download a Starborn release RPM into Downloads
+//   GET /__update/start?t=TOKEN&url=…   download a Harmonarium release RPM into Downloads
 //   GET /__update/status?t=TOKEN        JSON: state, percent, file, error and this phone's arch
 //   GET /__update/open?t=TOKEN          open the downloaded RPM so Sailfish offers to install it
 class LocalServer : public QObject

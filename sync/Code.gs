@@ -1,5 +1,5 @@
 /**
- * Starborn — Google Sheet bridge
+ * Harmonarium — Google Sheet bridge
  * ------------------------------
  * One script serves both halves of the app:
  *   • Lists  – the reading tracker. Pairs of columns in the lists tab:
@@ -9,10 +9,8 @@
  *
  * Setup: paste into Extensions → Apps Script, change TOKEN below to a long random
  * phrase, then Deploy → New deployment → Web app, "Execute as: Me",
- * "Who has access: Anyone". Paste the Web app URL and TOKEN into Starborn's Settings.
+ * "Who has access: Anyone". Paste the Web app URL and TOKEN into Harmonarium's Settings.
  * Full guide: sync/SETUP.md
- *
- * Coming from KosmicLitTrack? Replace that script with this one and keep your TOKEN.
  */
 
 const TOKEN = 'change-me-to-something-long-and-random';

@@ -17,7 +17,7 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         {
-          "url": "https://github.com/IsaakRichards/Starborn/*"
+          "url": "https://github.com/IsaakRichards/Harmonarium/*"
         }
       ]
     }

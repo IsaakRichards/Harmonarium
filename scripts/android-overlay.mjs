@@ -1,9 +1,9 @@
-// Adds Starborn's own Android pieces to the project that `tauri android init` generates
+// Adds Harmonarium's own Android pieces to the project that `tauri android init` generates
 // (src-tauri/gen/android is rebuilt in CI, so it isn't committed). Run it right after init:
 //   node scripts/android-overlay.mjs
 //
-// - copies the in-app updater (src-tauri/android/StarbornUpdater.kt) and its R8 keep rules
-// - registers the updater on the webview as window.StarbornUpdater (MainActivity)
+// - copies the in-app updater (src-tauri/android/HarmonariumUpdater.kt) and its R8 keep rules
+// - registers the updater on the webview as window.HarmonariumUpdater (MainActivity)
 // - adds the REQUEST_INSTALL_PACKAGES permission so the updater can open the installer
 import fs from "node:fs";
 import path from "node:path";
@@ -12,25 +12,25 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const src = path.join(root, "src-tauri/android");
 const app = path.join(root, "src-tauri/gen/android/app");
-const pkgDir = path.join(app, "src/main/java/com/isaakrichards/starborn");
+const pkgDir = path.join(app, "src/main/java/com/isaakrichards/harmonarium");
 const fail = (msg) => { console.error(`android-overlay: ${msg}`); process.exit(1); };
 
 if (!fs.existsSync(pkgDir)) fail(`${pkgDir} not found; run \`tauri android init\` first`);
 
-fs.copyFileSync(path.join(src, "StarbornUpdater.kt"), path.join(pkgDir, "StarbornUpdater.kt"));
-fs.copyFileSync(path.join(src, "starborn-updater.pro"), path.join(app, "starborn-updater.pro"));
+fs.copyFileSync(path.join(src, "HarmonariumUpdater.kt"), path.join(pkgDir, "HarmonariumUpdater.kt"));
+fs.copyFileSync(path.join(src, "harmonarium-updater.pro"), path.join(app, "harmonarium-updater.pro"));
 
 // MainActivity: hook the webview as it is created, before the page loads.
 const mainPath = path.join(pkgDir, "MainActivity.kt");
 let main = fs.readFileSync(mainPath, "utf8");
-if (!main.includes("StarbornUpdater(")) {
+if (!main.includes("HarmonariumUpdater(")) {
   const end = main.lastIndexOf("}");
   if (end < 0) fail("unexpected MainActivity.kt");
   main = main.slice(0, end).trimEnd() + `
 
   override fun onWebViewCreate(webView: android.webkit.WebView) {
     super.onWebViewCreate(webView)
-    webView.addJavascriptInterface(StarbornUpdater(this, webView), "StarbornUpdater")
+    webView.addJavascriptInterface(HarmonariumUpdater(this, webView), "HarmonariumUpdater")
   }
 }
 `;

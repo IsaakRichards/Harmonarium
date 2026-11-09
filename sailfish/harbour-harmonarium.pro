@@ -1,7 +1,7 @@
-# Starborn for Sailfish OS: a Silica window around Sailfish's WebView, running the same
+# Harmonarium for Sailfish OS: a Silica window around Sailfish's WebView, running the same
 # web interface as the desktop and Android apps (built into ./www by `npm run build:sailfish`).
 
-TARGET = harbour-starborn
+TARGET = harbour-harmonarium
 
 CONFIG += sailfishapp c++11
 QT += network
@@ -14,11 +14,11 @@ HEADERS += \
     src/localserver.h
 
 DISTFILES += \
-    qml/harbour-starborn.qml \
+    qml/harbour-harmonarium.qml \
     qml/cover/CoverPage.qml \
-    qml/cover/starborn.png \
-    rpm/harbour-starborn.spec \
-    harbour-starborn.desktop
+    qml/cover/harmonarium.png \
+    rpm/harbour-harmonarium.spec \
+    harbour-harmonarium.desktop
 
 SAILFISHAPP_ICONS = 86x86 108x108 128x128 172x172
 

@@ -9,7 +9,7 @@
 //   outbox    – progress entries waiting to be pushed to the sheet, keyed by book id
 //   kv        – settings and misc values
 
-const DB_NAME = "starborn";
+const DB_NAME = "harmonarium";
 const DB_VERSION = 1;
 const STORES = {
   books: "id",

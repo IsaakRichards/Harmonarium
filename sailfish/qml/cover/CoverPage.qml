@@ -4,7 +4,7 @@ import Sailfish.Silica 1.0
 CoverBackground {
     Image {
         id: icon
-        source: "starborn.png"
+        source: "harmonarium.png"
         width: parent.width * 0.5
         height: width
         anchors.horizontalCenter: parent.horizontalCenter
@@ -17,7 +17,7 @@ CoverBackground {
         anchors.top: icon.bottom
         anchors.topMargin: Theme.paddingLarge
         anchors.horizontalCenter: parent.horizontalCenter
-        text: "Starborn"
+        text: "Harmonarium"
         font.pixelSize: Theme.fontSizeLarge
         color: Theme.highlightColor
     }

@@ -65,7 +65,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Starborn-Linux
+          name: Harmonarium-Linux
           path: |
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb

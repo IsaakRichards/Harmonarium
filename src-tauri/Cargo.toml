@@ -1,13 +1,13 @@
 [package]
-name = "starborn"
+name = "harmonarium"
 version = "0.2.0"
-description = "Starborn: EPUB reader and reading tracker synced through Google Sheets"
+description = "Harmonarium: EPUB reader and reading tracker synced through Google Sheets"
 authors = ["Isaak Richards"]
 edition = "2021"
 
 [lib]
 # The _lib suffix avoids a name clash with the binary on Windows.
-name = "starborn_lib"
+name = "harmonarium_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,4 +1,4 @@
-// Starborn boot: wires the Shelf (EPUB library + reader) to the Lists (tracker).
+// Harmonarium boot: wires the Shelf (EPUB library + reader) to the Lists (tracker).
 import * as settings from "./settings.js";
 import * as library from "./library.js";
 import * as reader from "./reader.js";
@@ -9,7 +9,7 @@ import { toast } from "./util.js";
 import * as native from "./native.js";
 import * as updater from "./updater.js";
 
-const TAB_KEY = "sb-tab";
+const TAB_KEY = "hm-tab";
 
 function setTab(tab) {
   document.body.dataset.tab = tab;
@@ -72,7 +72,7 @@ async function boot() {
   dpad.init(reader.api, { openSettings: () => lists.openSettings(), addBooks: () => library.openAddBooks() });
   dpad.setToast(toast);
   applyKeypadMode();
-  window.addEventListener("starborn:keypad", applyKeypadMode);
+  window.addEventListener("harmonarium:keypad", applyKeypadMode);
   lists.init({
     openBook,
     onSyncClick: () => library.refreshRemote(true),

@@ -1,9 +1,9 @@
-Name:       harbour-starborn
+Name:       harbour-harmonarium
 Summary:    EPUB reader and reading tracker synced through Google Sheets
 Version:    0.2.0
 Release:    1
 License:    Unspecified
-URL:        https://github.com/IsaakRichards/Starborn
+URL:        https://github.com/IsaakRichards/Harmonarium
 Source0:    %{name}-%{version}.tar.bz2
 
 Requires:   sailfishsilica-qt5 >= 0.10.9
@@ -18,7 +18,7 @@ BuildRequires:  pkgconfig(Qt5Network)
 BuildRequires:  desktop-file-utils
 
 %description
-Starborn is a galaxy-themed EPUB reader and reading tracker. Your reading lists
+Harmonarium is a galaxy-themed EPUB reader and reading tracker. Your reading lists
 and your place in every book are kept in a Google Sheet that you own, so they
 follow you between Sailfish OS, Android, Linux and Windows. Supports touch,
 keyboards, d-pads and game controllers.

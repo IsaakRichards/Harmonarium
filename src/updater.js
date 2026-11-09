@@ -1,22 +1,22 @@
-// In-app updater, for every platform Starborn ships on.
+// In-app updater, for every platform Harmonarium ships on.
 //
-// - Android: GitHub's latest release → Starborn.apk, downloaded and handed to the installer by
-//   StarbornUpdater.kt (window.StarbornUpdater, only present in the Android build).
+// - Android: GitHub's latest release → Harmonarium.apk, downloaded and handed to the installer by
+//   HarmonariumUpdater.kt (window.HarmonariumUpdater, only present in the Android build).
 // - Sailfish OS: GitHub's latest release → the RPM for this phone's CPU, downloaded into Downloads
 //   by the shell (sailfish/src/localserver.cpp), then opened so Sailfish offers to install it.
 // - Windows and the Linux AppImage: Tauri's updater plugin reads latest.json from the latest
 //   release, checks the signature, installs and restarts.
-// - Linux .deb / .rpm (and desktop releases published without signatures): Starborn notices the
+// - Linux .deb / .rpm (and desktop releases published without signatures): Harmonarium notices the
 //   new release and opens its download page.
 
 import * as native from "./native.js";
 
-const REPO = "IsaakRichards/Starborn";
+const REPO = "IsaakRichards/Harmonarium";
 const RELEASES = `https://github.com/${REPO}/releases/latest`;
-const LAST_CHECK = "sb-update-checked";
+const LAST_CHECK = "hm-update-checked";
 const DAY = 24 * 60 * 60 * 1000;
 
-const bridge = () => (typeof window !== "undefined" ? window.StarbornUpdater : undefined);
+const bridge = () => (typeof window !== "undefined" ? window.HarmonariumUpdater : undefined);
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 /** android | sailfish | desktop | null */
@@ -58,7 +58,7 @@ export function subscribe(fn) { listeners.add(fn); return () => listeners.delete
 /* ---------- Android events ---------- */
 
 if (typeof window !== "undefined") {
-  window.addEventListener("starborn:update", (e) => {
+  window.addEventListener("harmonarium:update", (e) => {
     const d = e.detail || {};
     if (d.state === "progress") set({ status: "downloading", percent: d.percent });
     else if (d.state === "downloaded") set({ status: "ready", percent: 100 });
@@ -117,13 +117,13 @@ async function checkWithGitHub(k) {
   const page = rel.html_url || RELEASES;
 
   if (k === "android") {
-    const a = assets.find((x) => x.name === "Starborn.apk");
-    if (!a) throw new Error(`The ${version} release has no Starborn.apk`);
+    const a = assets.find((x) => x.name === "Harmonarium.apk");
+    if (!a) throw new Error(`The ${version} release has no Harmonarium.apk`);
     return { version, size: a.size, page, url: a.browser_download_url, how: "apk" };
   }
   if (k === "sailfish") {
     const { arch } = await native.updateStatus();
-    const a = assets.find((x) => x.name.startsWith("harbour-starborn") && x.name.endsWith(`.${arch}.rpm`));
+    const a = assets.find((x) => x.name.startsWith("harbour-harmonarium") && x.name.endsWith(`.${arch}.rpm`));
     if (!a) throw new Error(`The ${version} release has no RPM for ${arch} phones`);
     return { version, size: a.size, page, url: a.browser_download_url, how: "rpm" };
   }
@@ -235,7 +235,7 @@ export async function autoCheck(toast, openSettings) {
   try { last = +localStorage.getItem(LAST_CHECK) || 0; } catch { /* ignore */ }
   if (Date.now() - last < DAY) return;
   const s = await check();
-  if (s.status === "available") toast(`Starborn ${s.release.version} is out`, openSettings, "Update");
+  if (s.status === "available") toast(`Harmonarium ${s.release.version} is out`, openSettings, "Update");
   else if (s.status === "error") set({ status: "idle", error: "" }); // stay quiet on launch
 }
 
@@ -256,14 +256,14 @@ function describe(s) {
       return [`Version <b>${v}</b> is ready${mb(rel.size)}.`, `Download and install ${v}`];
     case "downloading": return [s.percent >= 0 ? `Downloading… ${s.percent}%` : "Downloading…", "Downloading…"];
     case "ready": return [`Version ${v} is downloaded.`, "Install"];
-    case "permission": return ["Allow <b>Install unknown apps</b> for Starborn, then come back here.", "Install"];
+    case "permission": return ["Allow <b>Install unknown apps</b> for Harmonarium, then come back here.", "Install"];
     case "installing":
       if (rel.how === "rpm") return [`The installer should be open. If it isn't, open <b>${esc(fileName(s.file))}</b> in Downloads with the Files app.`, "Open the installer again"];
-      if (rel.how === "tauri") return ["Installing… Starborn will restart.", "Installing…"];
+      if (rel.how === "tauri") return ["Installing… Harmonarium will restart.", "Installing…"];
       return ["The installer is open. Your books and lists stay as they are.", "Install"];
     case "saved": return [`Saved <b>${esc(fileName(s.file))}</b> to Downloads. Open it with the Files app to install. (Sailfish asks you to allow untrusted software the first time.)`, "Try opening it again"];
     case "error": return [esc(s.error), "Try again"];
-    default: return [`This is version ${esc(currentVersion())}. Updates come from Starborn's GitHub releases.`, "Check for updates"];
+    default: return [`This is version ${esc(currentVersion())}. Updates come from Harmonarium's GitHub releases.`, "Check for updates"];
   }
 }
 

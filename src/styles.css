@@ -1,4 +1,4 @@
-/* Starborn. A starfield behind everything; a glass header with tabs (Shelf | Lists).
+/* Harmonarium. A starfield behind everything; a glass header with tabs (Shelf | Lists).
    Lists: a strip of series "systems" with orbit rings, then each list as a board column.
    Shelf: the EPUBs on this device. Reader: a full-screen page with its own reading themes. */
 :root {
@@ -334,7 +334,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; user-select: none;
 }
 
 /* =====================================================================
-   Starborn additions
+   Harmonarium additions
    ===================================================================== */
 
 /* ---------- tabs ---------- */

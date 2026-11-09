@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Starborn",
+  "productName": "Harmonarium",
   "version": "0.2.0",
-  "identifier": "com.isaakrichards.starborn",
+  "identifier": "com.isaakrichards.harmonarium",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Starborn",
+        "title": "Harmonarium",
         "width": 1280,
         "height": 840,
         "minWidth": 360,
@@ -43,7 +43,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5MjkxQjk5ODE2M0FGREMKUldUY3IyT0JtUnNwNmZvU0IyUjYvT0d0VUljdGJTTklGRVFsSGU4V2w2Nk5GYWRXNDVVSk92czkK",
       "endpoints": [
-        "https://github.com/IsaakRichards/Starborn/releases/latest/download/latest.json"
+        "https://github.com/IsaakRichards/Harmonarium/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

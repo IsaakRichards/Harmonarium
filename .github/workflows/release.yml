@@ -65,12 +65,12 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          name: Starborn ${{ inputs.tag || github.ref_name }}
+          name: Harmonarium ${{ inputs.tag || github.ref_name }}
           generate_release_notes: true
           body: |
             **Which file do I want?**
-            - **Android:** `Starborn.apk`
-            - **Sailfish OS:** `harbour-starborn-…aarch64.rpm` (newer phones) or `…armv7hl.rpm` (older ones)
-            - **Windows:** `Starborn_…_x64-setup.exe` (or the `.msi`)
+            - **Android:** `Harmonarium.apk`
+            - **Sailfish OS:** `harbour-harmonarium-…aarch64.rpm` (newer phones) or `…armv7hl.rpm` (older ones)
+            - **Windows:** `Harmonarium_…_x64-setup.exe` (or the `.msi`)
             - **Linux:** `.AppImage` runs on any distro · `.deb` for Ubuntu/Mint/Debian · `.rpm` for Fedora
           files: release/*

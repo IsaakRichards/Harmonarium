@@ -1,9 +1,9 @@
 {
-  "name": "starborn",
+  "name": "harmonarium",
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "description": "Starborn: a galaxy-themed EPUB reader and reading tracker for Android, Linux and Windows, synced through your own Google Sheet.",
+  "description": "Harmonarium: a galaxy-themed EPUB reader and reading tracker for Android, Linux and Windows, synced through your own Google Sheet.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -1,6 +1,6 @@
-# Connecting Starborn to a Google Sheet
+# Connecting Harmonarium to a Google Sheet
 
-Starborn keeps two things in one Google Sheet that you own:
+Harmonarium keeps two things in one Google Sheet that you own:
 
 | Tab | What's in it |
 | --- | --- |
@@ -9,10 +9,6 @@ Starborn keeps two things in one Google Sheet that you own:
 
 A small Apps Script attached to the sheet is the go-between, so there's no Google
 Cloud project, OAuth login, or password stored on your devices.
-
-> **Coming from KosmicLitTrack?** Use the same sheet. Replace the old script with
-> [`Code.gs`](./Code.gs), keep your `TOKEN`, and redeploy as a new version. Your
-> lists stay exactly as they are; a `Progress` tab is added at the end.
 
 ## 1. Add the script
 
@@ -34,7 +30,7 @@ version** so the URL stays the same.
 
 ## 3. Connect each device
 
-In Starborn open **Settings** (the gear), paste the URL and token, and press
+In Harmonarium open **Settings** (the gear), paste the URL and token, and press
 **Connect**. Give each device a name you'll recognise (*Pixel*, *Dorm laptop*).
 
 ## How it behaves

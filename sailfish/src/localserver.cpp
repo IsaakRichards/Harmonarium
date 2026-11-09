@@ -22,8 +22,8 @@ namespace {
 
 const int kMaxHeaderBytes = 16 * 1024;
 const int kMaxBooks = 2000;
-// The updater only ever downloads release files from Starborn's own GitHub repository.
-const char kReleasePrefix[] = "https://github.com/IsaakRichards/Starborn/releases/download/";
+// The updater only ever downloads release files from Harmonarium's own GitHub repository.
+const char kReleasePrefix[] = "https://github.com/IsaakRichards/Harmonarium/releases/download/";
 
 QByteArray mimeFor(const QString &path)
 {
@@ -276,7 +276,7 @@ QByteArray LocalServer::updateStart(const QString &target)
     if (!target.startsWith(QLatin1String(kReleasePrefix)) || !name.endsWith(QLatin1String(".rpm"))
             || name.contains(QLatin1Char('/'))) {
         o.insert(QStringLiteral("ok"), false);
-        o.insert(QStringLiteral("error"), QStringLiteral("Not a Starborn release RPM"));
+        o.insert(QStringLiteral("error"), QStringLiteral("Not a Harmonarium release RPM"));
         return QJsonDocument(o).toJson(QJsonDocument::Compact);
     }
 
@@ -300,7 +300,7 @@ QByteArray LocalServer::updateStart(const QString &target)
 
     QNetworkRequest req(url);
     req.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
-    req.setRawHeader("User-Agent", "Starborn-Sailfish");
+    req.setRawHeader("User-Agent", "Harmonarium-Sailfish");
     m_reply = m_nam.get(req);
     m_updState = QStringLiteral("downloading");
     m_updPercent = -1;

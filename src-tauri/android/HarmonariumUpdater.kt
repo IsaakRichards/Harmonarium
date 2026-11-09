@@ -1,11 +1,11 @@
-package com.isaakrichards.starborn
+package com.isaakrichards.harmonarium
 
 // In-app updater for the Android build.
 //
 // scripts/android-overlay.mjs copies this file into the generated Android project and registers it
-// on the webview as `window.StarbornUpdater`. The page (src/updater.js) asks GitHub which release is
-// newest; this class only downloads that release's Starborn.apk and hands it to the system installer.
-// Progress is reported back as `starborn:update` events on `window`.
+// on the webview as `window.HarmonariumUpdater`. The page (src/updater.js) asks GitHub which release is
+// newest; this class only downloads that release's Harmonarium.apk and hands it to the system installer.
+// Progress is reported back as `harmonarium:update` events on `window`.
 
 import android.app.Activity
 import android.content.Intent
@@ -21,15 +21,15 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
 
-class StarbornUpdater(private val activity: Activity, private val webView: WebView) {
+class HarmonariumUpdater(private val activity: Activity, private val webView: WebView) {
     companion object {
         /** Only release assets from this repository are ever downloaded. */
-        private const val ALLOWED_PREFIX = "https://github.com/IsaakRichards/Starborn/releases/download/"
+        private const val ALLOWED_PREFIX = "https://github.com/IsaakRichards/Harmonarium/releases/download/"
     }
 
     @Volatile private var busy = false
     private val dir get() = File(activity.cacheDir, "updates")
-    private val apk get() = File(dir, "Starborn.apk")
+    private val apk get() = File(dir, "Harmonarium.apk")
 
     @JavascriptInterface
     fun versionName(): String = try {
@@ -62,11 +62,11 @@ class StarbornUpdater(private val activity: Activity, private val webView: WebVi
     fun download(url: String): Boolean {
         if (busy || !url.startsWith(ALLOWED_PREFIX)) return false
         busy = true
-        thread(name = "starborn-update") {
+        thread(name = "harmonarium-update") {
             try {
                 dir.mkdirs()
                 dir.listFiles()?.forEach { it.delete() }
-                val part = File(dir, "Starborn.apk.part")
+                val part = File(dir, "Harmonarium.apk.part")
                 val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = true // GitHub redirects to its asset host (https → https)
                     connectTimeout = 20_000
@@ -92,11 +92,11 @@ class StarbornUpdater(private val activity: Activity, private val webView: WebVi
                 }
                 conn.disconnect()
 
-                // Make sure it really is a Starborn APK before offering to install it.
+                // Make sure it really is a Harmonarium APK before offering to install it.
                 val info = activity.packageManager.getPackageArchiveInfo(part.path, 0)
                 if (info == null || info.packageName != activity.packageName) {
                     part.delete()
-                    throw Exception("The download isn't a Starborn APK")
+                    throw Exception("The download isn't a Harmonarium APK")
                 }
                 if (!part.renameTo(apk)) throw Exception("Couldn't save the download")
                 emit("downloaded", "version" to (info.versionName ?: ""))
@@ -137,7 +137,7 @@ class StarbornUpdater(private val activity: Activity, private val webView: WebVi
     private fun emit(state: String, vararg extra: Pair<String, Any>) {
         val json = JSONObject().put("state", state)
         for ((k, v) in extra) json.put(k, v)
-        val js = "window.dispatchEvent(new CustomEvent('starborn:update',{detail:$json}))"
+        val js = "window.dispatchEvent(new CustomEvent('harmonarium:update',{detail:$json}))"
         webView.post { webView.evaluateJavascript(js, null) }
     }
 }

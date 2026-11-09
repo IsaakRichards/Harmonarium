@@ -1,4 +1,4 @@
-//! Starborn native shell.
+//! Harmonarium native shell.
 //!
 //! Almost everything lives in the web front end (library, reader, sync).
 //! The Rust side only hosts the webview and provides the HTTP plugin, which
@@ -48,5 +48,5 @@ pub fn run() {
 
     builder
         .run(tauri::generate_context!())
-        .expect("error while running Starborn");
+        .expect("error while running Harmonarium");
 }

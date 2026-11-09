@@ -27,4 +27,4 @@ const jsonVersion = (s) => s.replace(/("version"\s*:\s*")[^"]*(")/, `$1${version
 edit("package.json", jsonVersion);
 edit("src-tauri/tauri.conf.json", jsonVersion);
 edit("src-tauri/Cargo.toml", (s) => s.replace(/^(version\s*=\s*")[^"]*(")/m, `$1${version}$2`));
-edit("sailfish/rpm/harbour-starborn.spec", (s) => s.replace(/^(Version:\s*).*$/m, `$1${version}`));
+edit("sailfish/rpm/harbour-harmonarium.spec", (s) => s.replace(/^(Version:\s*).*$/m, `$1${version}`));
