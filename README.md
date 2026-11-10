@@ -28,7 +28,7 @@ Your lists and your place in every book live in a Google Sheet that you own.</p>
 ### ReadEra look and feel
 **Settings → Appearance → Look and feel like ReadEra** dresses the whole app as the ReadEra reader, for anyone whose hands already know it. Pick its colours (follow the system, light or dark); each device remembers its own choice.
 - **Library:** a plain app bar with a **☰** drawer (Books, Lists and each of your lists, Add books, Sync now, Settings), search behind the magnifier, sort under the bar, books as a list with small covers, format and size, progress and a **⋮** menu, or as a grid. A round **+** adds books.
-- **Reader:** books open full-screen with a quiet status line (chapter, place, clock). A tap in the middle brings the toolbars up over the page; **Contents**, **Text** and **Day/Night** sit along the bottom, text settings rise as a bottom sheet, and Contents marks the chapter you're in. Edge taps cover a third of the page each side. The reading themes take ReadEra's names: Day, Sepia, Night and Console.
+- **Reader:** books open full-screen and the words fill the page edge to edge, justified and hyphenated, with only a hairline beneath marking each chapter and where you are. A tap in the middle brings the toolbars up over the page; **Contents**, **Text** and **Day/Night** sit along the bottom, text settings rise as a bottom sheet, and Contents marks the chapter you're in. Edge taps cover a third of the page each side. The reading themes take ReadEra's names: Day, Sepia, Night and Console.
 - Everything ReadEra doesn't have (lists, series rings, sheet sync, the jump-there card, keypad and d-pad control) stays, dressed to match.
 
 ### Touch, mouse, keyboard, d-pad or controller

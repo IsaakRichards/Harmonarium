@@ -55,7 +55,7 @@ export function init(h) {
   $("re-aa").addEventListener("click", () => toggle("aa-panel"));
   $("re-daynight").addEventListener("click", () => dayNight());
   nameSwatches();
-  window.addEventListener("harmonarium:readera", () => { nameSwatches(); rendition?.resize(); });
+  window.addEventListener("harmonarium:readera", () => { nameSwatches(); applyUserStyle(); relayout(); });
   for (const b of document.querySelectorAll("[data-dismiss]")) {
     b.addEventListener("click", () => $(b.dataset.dismiss).classList.add("hidden"));
   }
@@ -105,7 +105,7 @@ export function init(h) {
 
   // Keys are handled by dpad.js (see api() below).
   // Re-paginate on rotation / window resize.
-  window.addEventListener("resize", () => rendition?.resize());
+  window.addEventListener("resize", relayout);
 }
 
 function toggle(id) {
@@ -219,6 +219,20 @@ export async function open(id) {
   return true;
 }
 
+/** ReadEra look: the text runs nearly to the screen's edges, with a slim margin each side. */
+function pageGap() {
+  const w = $("viewer")?.clientWidth || window.innerWidth;
+  return 2 * Math.round(Math.min(48, Math.max(14, w * 0.05)));
+}
+/** Recalculate margins (ReadEra look) and re-paginate, e.g. after rotating the phone. */
+function relayout() {
+  if (!rendition) return;
+  const gap = readera.on() ? pageGap() : undefined;
+  rendition.settings.gap = gap;
+  if (rendition.manager?.settings) rendition.manager.settings.gap = gap;
+  rendition.resize();
+}
+
 /** Create the rendition for the current page-turn mode (slide needs epub.js's continuous manager). */
 function makeRendition() {
   const mode = pageturn.MODES.includes(settings.get().pageTurn) ? settings.get().pageTurn : "slide";
@@ -229,6 +243,7 @@ function makeRendition() {
     flow: "paginated",
     spread: "auto",
     minSpreadWidth: 900,
+    ...(readera.on() ? { gap: pageGap() } : {}),
   });
   for (const [name, t] of Object.entries(THEMES)) {
     rendition.themes.register(name, {
@@ -341,7 +356,7 @@ function updateFooter() {
   $("foot-percent").textContent = pct(current?.percent);
   $("progress-slider").value = Math.round((current?.percent || 0) * 1000);
   for (const a of $("toc-list").querySelectorAll("a")) a.classList.toggle("current", Number(a.dataset.i) === tocIndex);
-  if (readera.on()) readera.status(current?.chapter, current ? pct(current.percent) : "");
+  if (readera.on()) readera.track(current?.percent, chapterMarks());
 }
 
 async function saveProgress() {
@@ -403,13 +418,41 @@ async function setTheme(name) {
   rendition?.themes.select(name);
 }
 
+/** Where each top-level chapter starts, 0–1 (exact once the location index exists). */
+function chapterMarks() {
+  if (!book || !toc.length) return [];
+  const locs = book.locations?.length() ? book.locations._locations || [] : [];
+  const n = book.spine?.length || 1;
+  const out = [];
+  for (const t of toc) {
+    if (t.depth !== 0 || !t.href) continue;
+    const sec = book.spine.get(t.href.split("#")[0]);
+    if (!sec) continue;
+    let p = sec.index / n;
+    if (locs.length && sec.cfiBase) {
+      const i = locs.findIndex((c) => c.startsWith(`epubcfi(${sec.cfiBase}!`));
+      if (i >= 0) p = i / locs.length;
+    }
+    if (p > 0.001 && p < 0.999) out.push(p);
+  }
+  return out.length > 80 ? [] : [...new Set(out)];
+}
+
+/** ReadEra look: little top and bottom padding, justified and hyphenated text. */
+function readeraCss() {
+  if (!readera.on()) return "";
+  return `body { padding-top: 12px !important; padding-bottom: 4px !important; }
+p { text-align: justify; -webkit-hyphens: auto; hyphens: auto; }`;
+}
+
 function userCss() {
   const { fontFamily, lineHeight } = settings.get();
   const rules = [];
   if (fontFamily) rules.push(`font-family: ${fontFamily} !important;`);
   if (lineHeight) rules.push(`line-height: ${lineHeight} !important;`);
-  if (!rules.length) return "";
-  return `body, p, div, span, li, blockquote, td { ${rules.join(" ")} }`;
+  const extra = readeraCss();
+  if (!rules.length) return extra;
+  return `body, p, div, span, li, blockquote, td { ${rules.join(" ")} }\n${extra}`;
 }
 
 /** Links to websites inside a book would turn the reader into a browser (and on phones
@@ -433,6 +476,12 @@ function injectUserStyle(contents) {
     doc.head.appendChild(el);
   }
   el.textContent = userCss();
+  // Hyphenation needs a language; borrow the book's when the chapter file has none.
+  const html = doc.documentElement;
+  if (!html.getAttribute("lang") && !html.getAttribute("xml:lang")) {
+    const lang = book?.packaging?.metadata?.language;
+    if (lang) html.setAttribute("lang", lang);
+  }
 }
 
 function applyUserStyle() {

@@ -195,23 +195,22 @@ function renderDrawerLists() {
   });
 }
 
-// ------------------------------------------------------------------ reader status line
+// ------------------------------------------------------------------ reader progress hairline
 
-let clockTimer = null;
-/** The quiet line under the page: chapter on the left, place and the time on the right. */
-export function status(chapter, percentText) {
-  const c = $("re-st-chapter"), p = $("re-st-pos");
-  if (!c || !p) return;
-  c.textContent = chapter || "";
-  p.dataset.pos = percentText || "";
-  paintClock();
-  if (!clockTimer) clockTimer = setInterval(paintClock, 30000);
-}
-function paintClock() {
-  const p = $("re-st-pos");
-  if (!p) return;
-  const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  p.textContent = p.dataset.pos ? `${p.dataset.pos}  ·  ${t}` : t;
+/** ReadEra's line under the page: chapter dots along it, filled up to where you are. */
+export function track(percent, marks) {
+  const fill = $("re-track-fill"), at = $("re-track-at"), box = $("re-track-marks");
+  if (!fill || !at || !box) return;
+  const p = `${Math.max(0, Math.min(1, percent || 0)) * 100}%`;
+  fill.style.width = p;
+  at.style.left = p;
+  if (marks) {
+    const key = marks.map((m) => m.toFixed(4)).join(",");
+    if (box.dataset.key !== key) {
+      box.dataset.key = key;
+      box.innerHTML = marks.map((m) => `<s style="left:${(m * 100).toFixed(3)}%"></s>`).join("");
+    }
+  }
 }
 
 export const ICON = {
