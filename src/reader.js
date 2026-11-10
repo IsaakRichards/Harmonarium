@@ -4,6 +4,7 @@ import * as settings from "./settings.js";
 import * as sync from "./sync.js";
 import { escapeHtml, pct, timeAgo, toast } from "./util.js";
 import * as pageturn from "./pageturn.js";
+import * as readera from "./readera.js";
 
 const THEMES = {
   light: { bg: "#fbfaf7", fg: "#1d1b18", link: "#3b5bdb" },
@@ -24,6 +25,22 @@ let pendingRemote = null;
 let hooks = { close: () => {}, onFinished: () => {}, onKey: () => {} };
 let finishOffered = false;
 let turner = null;     // page-turn animator (pageturn.js)
+let tocIndex = -1;     // the contents entry for the current page
+
+const NIGHT = new Set(["dark", "black"]);
+/** Theme names; the ReadEra look uses ReadEra's own (Day, Sepia, Night, Console). */
+function themeName(t) {
+  const names = readera.on()
+    ? { light: "Day", sepia: "Sepia", dark: "Night", black: "Console" }
+    : { light: "Day", sepia: "Parchment", dark: "Night", black: "Midnight" };
+  return names[t] || t;
+}
+function nameSwatches() {
+  for (const sw of document.querySelectorAll(".swatch")) {
+    const n = themeName(sw.dataset.theme);
+    sw.title = n; sw.setAttribute("aria-label", n);
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,6 +50,12 @@ export function init(h) {
   $("btn-back").addEventListener("click", () => closeBook());
   $("btn-toc").addEventListener("click", () => toggle("toc-drawer"));
   $("btn-aa").addEventListener("click", () => toggle("aa-panel"));
+  // ReadEra look: the same tools, along the bottom bar.
+  $("re-toc").addEventListener("click", () => toggle("toc-drawer"));
+  $("re-aa").addEventListener("click", () => toggle("aa-panel"));
+  $("re-daynight").addEventListener("click", () => dayNight());
+  nameSwatches();
+  window.addEventListener("harmonarium:readera", () => { nameSwatches(); rendition?.resize(); });
   for (const b of document.querySelectorAll("[data-dismiss]")) {
     b.addEventListener("click", () => $(b.dataset.dismiss).classList.add("hidden"));
   }
@@ -88,6 +111,16 @@ export function init(h) {
 function toggle(id) {
   for (const other of ["toc-drawer", "aa-panel"]) if (other !== id) $(other).classList.add("hidden");
   $(id).classList.toggle("hidden");
+  if (id === "toc-drawer" && !$(id).classList.contains("hidden")) {
+    $("toc-list").querySelector("a.current")?.scrollIntoView({ block: "center" });
+  }
+}
+
+/** Day ↔ Night, remembering which day and night themes were last used. */
+async function dayNight() {
+  const s = settings.get();
+  await setTheme(NIGHT.has(s.theme) ? s.dayTheme || "light" : s.nightTheme || "dark");
+  toast(themeName(settings.get().theme));
 }
 
 /** What the d-pad navigator needs to drive the reader. */
@@ -123,7 +156,7 @@ export const api = {
     const order = ["light", "sepia", "dark", "black"];
     const next = order[(order.indexOf(settings.get().theme) + 1) % order.length];
     setTheme(next);
-    toast({ light: "Day", sepia: "Parchment", dark: "Night", black: "Midnight" }[next]);
+    toast(themeName(next));
   },
 };
 
@@ -148,6 +181,9 @@ export async function open(id) {
   hideBanner();
 
   $("reader-title").textContent = meta.title;
+  // ReadEra opens a book full-screen; a tap in the middle brings the toolbars up.
+  if (readera.on()) document.body.classList.add("immersive");
+  tocIndex = -1;
   $("viewer").innerHTML = "";
   $("progress-slider").disabled = true;
   document.body.dataset.rtheme = settings.get().theme;
@@ -284,7 +320,9 @@ function onRelocated(loc) {
   let percent;
   if (book.locations.length()) percent = book.locations.percentageFromCfi(cfi);
   else percent = book.spine.length ? loc.start.index / book.spine.length : 0;
-  current = { cfi, percent, chapter: chapterFor(loc.start.href) };
+  const hit = tocEntryFor(loc.start.href);
+  tocIndex = hit ? toc.indexOf(hit) : -1;
+  current = { cfi, percent, chapter: hit?.label || "" };
   $("viewer").dataset.cfi = cfi; // where the reader is (handy for tests and debugging)
   if (holdSaves && initialCfi === null) initialCfi = cfi;
   if (!holdSaves && !finishOffered && (loc.atEnd || (book.locations.length() && percent >= 0.995))) {
@@ -302,6 +340,8 @@ function updateFooter() {
   $("foot-chapter").textContent = current?.chapter || "";
   $("foot-percent").textContent = pct(current?.percent);
   $("progress-slider").value = Math.round((current?.percent || 0) * 1000);
+  for (const a of $("toc-list").querySelectorAll("a")) a.classList.toggle("current", Number(a.dataset.i) === tocIndex);
+  if (readera.on()) readera.status(current?.chapter, current ? pct(current.percent) : "");
 }
 
 async function saveProgress() {
@@ -322,14 +362,14 @@ function flattenToc(items, depth = 0, out = []) {
   return out;
 }
 
-function chapterFor(href) {
-  if (!href) return "";
+/** The contents entry for a spine file (the first one pointing into it). */
+function tocEntryFor(href) {
+  if (!href) return null;
   const base = href.split("#")[0];
-  const hit = toc.find((t) => {
+  return toc.find((t) => {
     const h = (t.href || "").split("#")[0];
     return h && (h === base || base.endsWith(h) || h.endsWith(base));
-  });
-  return hit?.label || "";
+  }) || null;
 }
 
 function renderToc() {
@@ -358,7 +398,7 @@ async function setFontSize(v) {
 }
 
 async function setTheme(name) {
-  await settings.update({ theme: name });
+  await settings.update({ theme: name, [NIGHT.has(name) ? "nightTheme" : "dayTheme"]: name });
   document.body.dataset.rtheme = name;
   rendition?.themes.select(name);
 }

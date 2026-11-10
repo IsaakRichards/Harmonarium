@@ -13,6 +13,16 @@
       document.documentElement.setAttribute("data-mode", m);
       var c = { space: "#070914", dark: "#111214", light: "#f4f5f8", medieval: "#e8d9b5" }[m];
       if (c) document.querySelector('meta[name="theme-color"]').setAttribute("content", c);
+      // ReadEra look & feel (src/readera.js) sits on top of any mode.
+      try {
+        if (localStorage.getItem("hm-readera") === "1") {
+          var t = localStorage.getItem("hm-readera-tone") || "auto";
+          if (t !== "light" && t !== "dark") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.setAttribute("data-readera", t);
+          document.documentElement.setAttribute("data-re-view", localStorage.getItem("hm-re-view") === "grid" ? "grid" : "list");
+          document.querySelector('meta[name="theme-color"]').setAttribute("content", t === "dark" ? "#202124" : "#ffffff");
+        }
+      } catch (e) {}
     })();
   </script>
   <link rel="icon" href="/favicon.png">
@@ -26,6 +36,14 @@
   <!-- ============ HOME (Shelf + Lists) ============ -->
   <div id="home">
     <header class="top">
+      <!-- ReadEra look: Material app bar (shown only with <html data-readera>) -->
+      <div class="re-bar" role="toolbar" aria-label="App bar">
+        <button class="re-ico" id="re-menu" title="Menu" aria-label="Open menu"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M3 6h18v2H3V6Zm0 5h18v2H3v-2Zm0 5h18v2H3v-2Z"/></svg></button>
+        <h1 class="re-title" id="re-title">Books</h1>
+        <button class="re-ico" id="re-search" title="Search" aria-label="Search"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14Z"/></svg></button>
+        <button class="re-ico" id="re-view" title="Grid" aria-label="Show as grid"></button>
+        <button class="re-ico" id="re-more" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg></button>
+      </div>
       <div class="wrap">
         <div class="brand">
           <img class="crest" src="/favicon.png" alt="" aria-hidden="true">
@@ -102,7 +120,29 @@
         <section class="board" id="board"></section>
       </section>
     </main>
+
+    <!-- ReadEra look: round add button -->
+    <button class="re-fab shelf-only" id="re-fab" title="Add books" aria-label="Add books"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"/></svg></button>
   </div>
+
+  <!-- ReadEra look: navigation drawer -->
+  <div class="re-scrim" id="re-scrim" hidden></div>
+  <aside class="re-drawer" id="re-drawer" hidden aria-label="Menu">
+    <div class="re-drawer-head">
+      <img src="/favicon.png" alt="" aria-hidden="true">
+      <b>Harmonarium</b>
+      <small id="re-drawer-sync"></small>
+    </div>
+    <nav class="re-nav">
+      <button data-re-go="shelf"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM6 4h5v8l-2.5-1.5L6 12V4Z"/></svg><span class="re-nav-t">Books</span><span class="re-n" id="re-n-books"></span></button>
+      <button data-re-go="lists"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 13h2v-2H3v2Zm0 4h2v-2H3v2Zm0-8h2V7H3v2Zm4 4h14v-2H7v2Zm0 4h14v-2H7v2ZM7 7v2h14V7H7Z"/></svg><span class="re-nav-t">Lists</span></button>
+      <div class="re-nav-sub" id="re-nav-lists"></div>
+      <hr>
+      <button data-re-act="add"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"/></svg><span class="re-nav-t">Add books</span></button>
+      <button data-re-act="sync"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 4V1L8 5l4 4V6a6 6 0 0 1 5.7 7.9l1.5 1.5A8 8 0 0 0 12 4Zm0 14a6 6 0 0 1-5.7-7.9L4.8 8.6A8 8 0 0 0 12 20v3l4-4-4-4v3Z"/></svg><span class="re-nav-t">Sync now</span></button>
+      <button data-re-act="settings"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Zm7.43-2.53a7.8 7.8 0 0 0 0-1.94l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.68-.97l-.38-2.65A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65a7.6 7.6 0 0 0-1.68.97l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.49.49 0 0 0 .12.64l2.11 1.65a7.8 7.8 0 0 0 0 1.94l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.39 1.08.72 1.68.97l.38 2.65c.04.24.25.42.49.42h4c.24 0 .45-.18.49-.42l.38-2.65a7.6 7.6 0 0 0 1.68-.97l2.49 1a.5.5 0 0 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65Z"/></svg><span class="re-nav-t">Settings</span></button>
+    </nav>
+  </aside>
 
   <!-- ============ READER ============ -->
   <section id="view-reader" class="reader" hidden>
@@ -123,7 +163,16 @@
       <span id="foot-chapter"></span>
       <input id="progress-slider" type="range" min="0" max="1000" value="0" disabled aria-label="Position in book">
       <span id="foot-percent">0%</span>
+      <!-- ReadEra look: the reader's tools sit along the bottom -->
+      <div class="re-tools">
+        <button class="r-btn re-tool" id="re-toc" title="Contents" aria-label="Contents"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M3 13h2v-2H3v2Zm0 4h2v-2H3v2Zm0-8h2V7H3v2Zm4 4h14v-2H7v2Zm0 4h14v-2H7v2ZM7 7v2h14V7H7Z"/></svg><span>Contents</span></button>
+        <button class="r-btn re-tool" id="re-aa" title="Text settings" aria-label="Text settings"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M9 4v3h5v12h3V7h5V4H9ZM3 12h3v7h3v-7h3V9H3v3Z"/></svg><span>Text</span></button>
+        <button class="r-btn re-tool" id="re-daynight" title="Day / Night" aria-label="Switch day and night"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.4 5.4 0 0 1-9.8-3.14c0-1.81.89-3.42 2.26-4.4C12.92 3.04 12.46 3 12 3Z"/></svg><span>Day/Night</span></button>
+      </div>
     </footer>
+
+    <!-- ReadEra look: the quiet status line under the page -->
+    <div class="re-status" aria-hidden="true"><span id="re-st-chapter"></span><span id="re-st-pos"></span></div>
 
     <div id="sync-banner" class="sync-banner hidden">
       <div id="sync-banner-text"></div>

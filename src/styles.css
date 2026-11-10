@@ -590,3 +590,291 @@ body.keypad #lib-search:focus:not(.typing)::placeholder, body.keypad #q:focus:no
   .aa-panel { top: 46px; }
   .sync-banner { bottom: 44px; }
 }
+
+/* ---------- reader: the chapter you're in, in Contents ---------- */
+#toc-list a.current { color: var(--gold); font-weight: 600; }
+
+/* =====================================================================
+   ReadEra look (src/readera.js): <html data-readera="light|dark">
+   Sits on top of whichever appearance mode is chosen. Accent colour: --re-accent.
+   ===================================================================== */
+.re-bar, .re-fab, .re-tools, .re-status, .lib-fmt, .lib-more-v { display: none; }
+
+html[data-readera] {
+  --re-accent: #2a7de1; --re-accent-rgb: 42, 125, 225; --re-accent-ink: #ffffff;
+  --re-surface: #ffffff; --re-bar-bg: #ffffff; --re-divider: rgba(0, 0, 0, 0.12); --re-page: #f5f5f5;
+  --void: #ffffff; --deep: #ffffff;
+  --glass: #ffffff; --glass-hi: #f5f5f5;
+  --edge: rgba(0, 0, 0, 0.14); --edge-hi: rgba(0, 0, 0, 0.26);
+  --star: #212121; --soft: #424242; --dim: #757575; --faint: #9e9e9e;
+  --gold: var(--re-accent); --gold-hi: var(--re-accent); --gold-ink: var(--re-accent-ink);
+  --nebula: var(--re-accent); --cyan: var(--re-accent); --danger: #d32f2f;
+  --gold-rgb: var(--re-accent-rgb); --cyan-rgb: var(--re-accent-rgb); --nebula-rgb: var(--re-accent-rgb); --danger-rgb: 211, 47, 47;
+  --well-rgb: 255, 255, 255; --ink-rgb: 0, 0, 0;
+  --panel: var(--re-surface); --toast: #323232;
+  --backdrop: linear-gradient(transparent, transparent);
+  --display: Roboto, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --body: Roboto, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: Roboto, "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+html[data-readera="dark"] {
+  --re-accent: #7cb1f2; --re-accent-rgb: 124, 177, 242; --re-accent-ink: #0b1a2e;
+  --re-surface: #2a2b2e; --re-bar-bg: #2a2b2e; --re-divider: rgba(255, 255, 255, 0.1); --re-page: #202124;
+  --void: #202124; --deep: #2a2b2e;
+  --glass: #2a2b2e; --glass-hi: #34353a;
+  --edge: rgba(255, 255, 255, 0.12); --edge-hi: rgba(255, 255, 255, 0.24);
+  --star: #e8eaed; --soft: #d2d4d8; --dim: #9aa0a6; --faint: #6f747a;
+  --danger: #f28b82; --danger-rgb: 242, 139, 130;
+  --well-rgb: 32, 33, 36; --ink-rgb: 255, 255, 255;
+  --toast: #3c3d40;
+  color-scheme: dark;
+}
+html[data-readera] body { font-size: 15px; background: var(--void); }
+html[data-readera="light"] body[data-tab="lists"] { background: var(--re-page); }
+html[data-readera] #sky { display: none; }
+
+/* no glows, no glass */
+html[data-readera] h1 b, html[data-readera] .tally .read b, html[data-readera] .col.done .col-h h2,
+html[data-readera] .tabs button[aria-selected="true"], html[data-readera] .lib-empty-glyph { text-shadow: none; }
+html[data-readera] .sync, html[data-readera] .col, html[data-readera] .sys, html[data-readera] .results,
+html[data-readera] .searchbar input, html[data-readera] .tabs { backdrop-filter: none; }
+html[data-readera="light"] .chip { color: hsl(var(--h) 70% 30%); background: hsl(var(--h) 60% 50% / 0.12); border-color: hsl(var(--h) 60% 40% / 0.35); }
+html[data-readera="light"] .sys .core { fill: hsl(var(--h) 70% 42%); }
+html[data-readera="light"] .sys .ring { stroke: hsl(var(--h) 70% 45%); filter: none; }
+html[data-readera="dark"] .chip { color: hsl(var(--h) 80% 78%); background: hsl(var(--h) 60% 50% / 0.16); border-color: hsl(var(--h) 70% 70% / 0.3); }
+html[data-readera="dark"] .sys .core { fill: hsl(var(--h) 80% 72%); }
+html[data-readera="dark"] .sys .ring { stroke: hsl(var(--h) 80% 66%); filter: none; }
+
+/* ---------- app bar ---------- */
+html[data-readera] .top {
+  position: sticky; top: 0; z-index: 5; padding: 0; background: var(--re-bar-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+html[data-readera] .re-bar {
+  display: flex; align-items: center; gap: 0; min-height: 56px;
+  padding: env(safe-area-inset-top, 0px) max(4px, env(safe-area-inset-right, 0px)) 0 max(4px, env(safe-area-inset-left, 0px));
+}
+html[data-readera] .re-title {
+  flex: 1; min-width: 0; margin: 0 0 0 20px; font: 500 20px/1.2 var(--body); letter-spacing: 0.01em; text-transform: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--star);
+}
+html[data-readera] .re-ico {
+  flex: none; width: 48px; height: 48px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 50%; background: none; color: var(--soft);
+}
+html[data-readera] .re-ico:hover { background: rgba(var(--ink-rgb), 0.06); }
+html[data-readera] .brand, html[data-readera] .tabs { display: none; }
+
+/* search sits behind the magnifier, as a flat field under the bar */
+html[data-readera] body:not(.re-searching) .searchbar { display: none; }
+html[data-readera] .searchbar { margin: 0 0 8px; }
+html[data-readera] .search-ico { left: 8px; color: var(--dim); }
+html[data-readera] .searchbar input {
+  border: 0; border-bottom: 2px solid var(--re-accent); border-radius: 0; background: transparent;
+  padding: 10px 8px 10px 38px; box-shadow: none;
+}
+html[data-readera] .searchbar input:focus { box-shadow: none; border-color: var(--re-accent); }
+html[data-readera] .add-btn { display: none; }
+html[data-readera] .toolbar { margin: 0 0 6px; gap: 8px; }
+html[data-readera] .hint { display: none; }
+html[data-readera] .seg-select { border: 0; background: transparent; color: var(--dim); font-weight: 500; padding: 6px 2px; }
+html[data-readera] .seg { border-radius: 4px; background: transparent; }
+html[data-readera] .seg button[aria-pressed="true"] { background: rgba(var(--re-accent-rgb), 0.14); color: var(--re-accent); }
+
+/* ---------- buttons, panels, snackbar ---------- */
+html[data-readera] .btn { border-radius: 4px; font-weight: 500; }
+html[data-readera] .btn.primary { background: var(--re-accent); color: var(--re-accent-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+html[data-readera] .icon-btn { border-radius: 50%; }
+html[data-readera] .scrim { background: rgba(0, 0, 0, 0.4); backdrop-filter: none; }
+html[data-readera] .panel { border: 0; box-shadow: -2px 0 16px rgba(0, 0, 0, 0.22); }
+@media (max-width: 640px) { html[data-readera] .panel { border-radius: 12px 12px 0 0; box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.22); } }
+html[data-readera] .p-kicker, html[data-readera] .results-h h2, html[data-readera] .toc-head h3 { letter-spacing: 0.06em; font-weight: 500; }
+html[data-readera] .field input, html[data-readera] .col-new input, html[data-readera] .res input { border-radius: 4px; }
+html[data-readera] .toast {
+  left: max(16px, env(safe-area-inset-left, 0px)); right: auto; transform: none;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: min(568px, calc(100% - 104px));
+  background: var(--toast); color: #fff; border: 0; border-radius: 4px; padding: 14px 16px; font-size: 14px;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.14);
+}
+html[data-readera] .toast button { color: #8ab4f8; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+html[data-readera] body.reading .toast { max-width: calc(100% - 32px); }
+html[data-readera] .modes.muted { opacity: 0.45; }
+.re-switch b { font-weight: 600; }
+.re-switch small { color: var(--dim); font-size: 12px; }
+.re-switch { align-items: flex-start; }
+.re-switch input { margin-top: 2px; flex: none; }
+
+/* ---------- Books: a list with small covers (or a grid) ---------- */
+html[data-readera] body[data-tab="shelf"] main.wrap { padding-left: 0; padding-right: 0; }
+html[data-readera] .lib-more-h { display: none; }
+html[data-readera] .lib-more-v { display: inline; }
+html[data-readera] .lib-more { opacity: 1; border: 0; background: none; color: var(--dim); font-size: 20px; line-height: 1; }
+html[data-readera] .lib-open:hover .cv.lib-cv { transform: none; }
+html[data-readera] .cv.lib-cv { border-radius: 2px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); }
+html[data-readera] .lib-bar { background: rgba(var(--ink-rgb), 0.1); }
+html[data-readera] .lib-bar span { box-shadow: none; }
+html[data-readera] .lib-ahead { box-shadow: none; }
+
+html[data-readera][data-re-view="list"] .lib-grid { display: block; padding: 0 0 calc(88px + env(safe-area-inset-bottom, 0px)); }
+html[data-readera][data-re-view="list"] .lib-card { border-bottom: 1px solid var(--re-divider); }
+html[data-readera][data-re-view="list"] .lib-open {
+  display: grid; grid-template-columns: 56px minmax(0, 1fr); column-gap: 16px; row-gap: 2px; align-content: center;
+  padding: 12px 52px 12px max(16px, env(safe-area-inset-left, 0px)); min-height: 108px;
+}
+html[data-readera][data-re-view="list"] .lib-open:hover { background: rgba(var(--ink-rgb), 0.04); }
+html[data-readera][data-re-view="list"] .cv.lib-cv {
+  grid-column: 1; grid-row: 1 / span 6; align-self: start; width: 56px; height: 84px; aspect-ratio: auto; padding: 4px; margin: 0;
+}
+html[data-readera][data-re-view="list"] .cv.lib-cv .cv-t { font-size: 8px; line-height: 1.1; }
+html[data-readera][data-re-view="list"] .lib-title,
+html[data-readera][data-re-view="list"] .lib-author,
+html[data-readera][data-re-view="list"] .lib-fmt,
+html[data-readera][data-re-view="list"] .lib-bar,
+html[data-readera][data-re-view="list"] .lib-sub { grid-column: 2; }
+html[data-readera][data-re-view="list"] .lib-title { font: 500 16px/1.25 var(--body); }
+html[data-readera][data-re-view="list"] .lib-author { font-size: 14px; }
+html[data-readera][data-re-view="list"] .lib-fmt { display: block; font-size: 12px; color: var(--faint); }
+html[data-readera][data-re-view="list"] .lib-bar { max-width: 240px; height: 2px; margin-top: 6px; }
+html[data-readera][data-re-view="list"] .lib-sub { font-size: 12px; white-space: normal; }
+html[data-readera][data-re-view="list"] .lib-ahead { top: auto; bottom: 2px; left: 2px; right: 2px; padding: 0 2px; font-size: 9px; text-align: center; border-radius: 3px; }
+html[data-readera][data-re-view="list"] .lib-more { top: 50%; left: auto; right: max(4px, env(safe-area-inset-right, 0px)); transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; }
+
+html[data-readera][data-re-view="grid"] .lib-grid {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 20px 14px;
+  padding: 14px 16px calc(88px + env(safe-area-inset-bottom, 0px));
+}
+html[data-readera][data-re-view="grid"] .lib-title { font-weight: 500; }
+html[data-readera][data-re-view="grid"] .lib-more { top: 4px; left: auto; right: 4px; width: 30px; height: 30px; border-radius: 50%; font-size: 18px; background: rgba(0, 0, 0, 0.4); color: #fff; }
+
+html[data-readera] .lib-empty h2 { font: 500 18px var(--body); letter-spacing: 0; text-transform: none; }
+html[data-readera] .lib-empty-glyph { color: var(--faint); }
+
+@supports not (aspect-ratio: 2 / 3) {
+  html[data-readera][data-re-view="list"] .cv.lib-cv { height: 84px !important; padding: 4px !important; }
+}
+
+/* round + button */
+html[data-readera] .re-fab {
+  display: grid; place-items: center; position: fixed; z-index: 6;
+  right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--re-accent); color: var(--re-accent-ink);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.14), 0 1px 18px rgba(0, 0, 0, 0.12);
+}
+html[data-readera] body.reading .re-fab { display: none; }
+
+/* ---------- Lists, as Material cards ---------- */
+html[data-readera] .col {
+  border: 0; border-radius: 8px; background: var(--re-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+html[data-readera] .col.done { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.2); }
+html[data-readera] .col-new { background: transparent; border: 1px dashed var(--edge-hi); box-shadow: none; }
+html[data-readera] .col-h h2, html[data-readera] .col-new label { font: 500 16px/1.2 var(--body); letter-spacing: 0; text-transform: none; color: var(--star); }
+html[data-readera] .col.done .col-h h2 { color: var(--re-accent); }
+html[data-readera] .sys, html[data-readera] .results { border-radius: 8px; }
+html[data-readera] .results { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
+html[data-readera] .res { border-radius: 6px; }
+html[data-readera] .act:hover { box-shadow: none; }
+
+/* ---------- navigation drawer ---------- */
+html[data-readera] .re-scrim { position: fixed; inset: 0; z-index: 39; background: rgba(0, 0, 0, 0.4); }
+html[data-readera] .re-drawer {
+  position: fixed; z-index: 40; top: 0; bottom: 0; left: 0; width: min(304px, 85vw); overflow-y: auto;
+  display: flex; flex-direction: column; background: var(--re-surface); color: var(--star);
+  padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  transform: translateX(-100%); transition: transform 0.22s ease-out;
+}
+html[data-readera] body.re-drawer-open .re-drawer { transform: none; }
+html[data-readera] .re-drawer-head {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 16px 14px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--re-divider);
+}
+html[data-readera] .re-drawer-head img { width: 52px; height: 52px; border-radius: 12px; }
+html[data-readera] .re-drawer-head b { font: 500 16px var(--body); }
+html[data-readera] .re-drawer-head small { color: var(--dim); font-size: 13px; }
+html[data-readera] .re-nav { display: flex; flex-direction: column; padding: 8px 8px 8px 0; }
+html[data-readera] .re-nav button {
+  display: flex; align-items: center; gap: 32px; width: 100%; min-height: 48px; padding: 0 12px 0 max(16px, env(safe-area-inset-left, 0px));
+  border: 0; border-radius: 0 24px 24px 0; background: none; color: var(--soft); text-align: left; font: 500 14px var(--body);
+}
+html[data-readera] .re-nav button svg { flex: none; color: var(--dim); }
+html[data-readera] .re-nav button:hover { background: rgba(var(--ink-rgb), 0.05); }
+html[data-readera] .re-nav button[aria-current="true"] { background: rgba(var(--re-accent-rgb), 0.14); color: var(--re-accent); }
+html[data-readera] .re-nav button[aria-current="true"] svg { color: var(--re-accent); }
+html[data-readera] .re-nav-t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-readera] .re-n { color: var(--dim); font-weight: 400; font-size: 13px; }
+html[data-readera] .re-nav-sub button { font-weight: 400; min-height: 44px; padding-left: max(28px, env(safe-area-inset-left, 0px)); }
+html[data-readera] .re-nav-sub button svg { width: 20px; height: 20px; }
+html[data-readera] .re-nav hr { border: 0; border-top: 1px solid var(--re-divider); margin: 8px 0; }
+
+/* ---------- reader: full page, toolbars float over it ---------- */
+html[data-readera] .reader { --r-bar: #ffffff; --r-bar-fg: #202124; }
+html[data-readera] body[data-rtheme="sepia"] .reader { --r-bar: #f8f0dc; --r-bar-fg: #4a3b28; }
+html[data-readera] body[data-rtheme="dark"] .reader { --r-bar: #2e3040; --r-bar-fg: #e6e3dc; }
+html[data-readera] body[data-rtheme="black"] .reader { --r-bar: #1b1b1b; --r-bar-fg: #d0cdc6; }
+html[data-readera] .reader-bar, html[data-readera] .reader-foot {
+  position: absolute; left: 0; right: 0; z-index: 25; opacity: 1;
+  background: var(--r-bar); color: var(--r-bar-fg); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease-out, opacity 0.2s;
+}
+html[data-readera] .reader-bar { top: 0; min-height: 56px; padding-left: max(4px, env(safe-area-inset-left, 0px)); padding-right: max(4px, env(safe-area-inset-right, 0px)); }
+html[data-readera] .reader-title { font: 500 18px/1.2 var(--body); }
+html[data-readera] .reader-foot {
+  bottom: 0; flex-wrap: wrap; gap: 4px 12px; font-size: 13px;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+html[data-readera] body.immersive .reader-bar { transform: translateY(-100%); opacity: 0; }
+html[data-readera] body.immersive .reader-foot { transform: translateY(100%); opacity: 0; }
+html[data-readera] #btn-toc, html[data-readera] #btn-aa, html[data-readera] #foot-chapter { display: none; }
+html[data-readera] #progress-slider { accent-color: var(--re-accent); }
+html[data-readera] .re-tools { display: flex; flex-basis: 100%; justify-content: space-around; }
+html[data-readera] .re-tool {
+  width: auto; height: auto; min-width: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 10px; border-radius: 8px; font-size: 11px;
+}
+html[data-readera] #viewer {
+  inset: calc(10px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(26px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+html[data-readera] .tap-zone { width: 30%; }
+html[data-readera] .re-status {
+  display: flex; justify-content: space-between; gap: 16px; position: absolute; z-index: 1; pointer-events: none;
+  left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(5px + env(safe-area-inset-bottom, 0px));
+  font: 12px/1.3 var(--body); color: var(--r-fg); opacity: 0.55; font-variant-numeric: tabular-nums;
+}
+html[data-readera] #re-st-chapter { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-readera] #re-st-pos { flex: none; white-space: pre; }
+
+/* text settings: a bottom sheet */
+html[data-readera] .aa-panel {
+  top: auto; bottom: 0; left: 0; right: 0; width: 100%; z-index: 30; gap: 14px;
+  border: 0; border-radius: 12px 12px 0 0; background: var(--r-bar); color: var(--r-bar-fg);
+  padding: 10px max(20px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+  box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.25);
+}
+html[data-readera] .aa-panel::before { content: ""; align-self: center; width: 32px; height: 4px; border-radius: 2px; background: currentColor; opacity: 0.3; }
+html[data-readera] .aa-row > span:first-child { width: 76px; color: inherit; opacity: 0.7; font-size: 13px; letter-spacing: 0; text-transform: none; }
+html[data-readera] .aa-row select { background: transparent; color: inherit; border-radius: 4px; border-color: rgba(128, 128, 128, 0.4); }
+html[data-readera] .aa-row select option { background: var(--r-bar); color: var(--r-bar-fg); }
+html[data-readera] .aa-panel .btn { color: inherit; background: transparent; border-color: rgba(128, 128, 128, 0.4); }
+html[data-readera] .swatch { width: 36px; height: 36px; border-color: rgba(128, 128, 128, 0.45); }
+html[data-readera] body[data-rtheme="light"] .swatch.light, html[data-readera] body[data-rtheme="sepia"] .swatch.sepia,
+html[data-readera] body[data-rtheme="dark"] .swatch.dark, html[data-readera] body[data-rtheme="black"] .swatch.black { border-color: var(--re-accent); box-shadow: 0 0 0 2px var(--re-accent); }
+
+/* contents: a plain side sheet */
+html[data-readera] .toc-drawer { width: min(340px, 85vw); border: 0; background: var(--r-bar); color: var(--r-bar-fg); box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3); }
+html[data-readera] .toc-head { border-color: rgba(128, 128, 128, 0.25); min-height: 56px; }
+html[data-readera] .toc-head h3 { font: 500 18px var(--body); letter-spacing: 0; text-transform: none; color: inherit; }
+html[data-readera] #toc-list a { padding-top: 12px; padding-bottom: 12px; font-size: 15px; }
+html[data-readera] #toc-list a:hover { background: rgba(128, 128, 128, 0.12); }
+html[data-readera] #toc-list a.current { color: var(--re-accent); font-weight: 500; background: rgba(var(--re-accent-rgb), 0.12); box-shadow: inset 3px 0 0 var(--re-accent); }
+
+/* "jump there?" card */
+html[data-readera] .sync-banner {
+  background: var(--r-bar); color: var(--r-bar-fg); border: 0; border-radius: 8px;
+  bottom: calc(40px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+}
+html[data-readera] .sync-banner .muted { color: inherit; opacity: 0.7; }
+html[data-readera] .sync-banner .btn:not(.primary) { color: inherit; background: transparent; }

@@ -269,6 +269,7 @@ function scope() {
   const panel = $("#panel");
   if (shown(panel)) return panel;
   if (shown($("#device-books"))) return $("#device-books");
+  if (shown($("#re-drawer"))) return $("#re-drawer"); // ReadEra look's menu
   if (document.body.classList.contains("reading")) {
     for (const id of ["#toc-drawer", "#aa-panel", "#sync-banner"]) if (shown($(id))) return $(id);
     return $("#view-reader");

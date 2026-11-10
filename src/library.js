@@ -222,10 +222,11 @@ function cardHtml(b, p) {
         </div>
         <div class="lib-title">${escapeHtml(b.title)}</div>
         <div class="lib-author">${escapeHtml(b.author)}</div>
+        <div class="lib-fmt">EPUB${b.size ? ` · ${(b.size / 1048576).toFixed(b.size < 10485760 ? 1 : 0)} MB` : ""}</div>
         <div class="lib-bar"><span style="width:${(percent * 100).toFixed(1)}%"></span></div>
         <div class="lib-sub">${p ? `${pct(percent)} · ${timeAgo(p.updatedAt)}` : "Unread"}${where ? ` · <span class="lib-list${where.done ? " done" : ""}">${escapeHtml(where.name)}</span>` : ""}</div>
       </button>
-      <button class="lib-more" title="Remove" aria-label="Remove ${escapeHtml(b.title)}">⋯</button>
+      <button class="lib-more" title="Remove" aria-label="Remove ${escapeHtml(b.title)}"><span class="lib-more-h">⋯</span><span class="lib-more-v">⋮</span></button>
     </article>`;
 }
 

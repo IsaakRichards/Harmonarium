@@ -6,6 +6,7 @@ import { netFetch } from './sync.js';
 import { toast } from './util.js';
 import * as updater from './updater.js';
 import * as appearance from './appearance.js';
+import * as readera from './readera.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -610,7 +611,12 @@ function renderSettings(p) {
     <label class="check"><input id="s-autojump" type="checkbox"${st.autoJump ? ' checked' : ''}> Jump to a newer position from another device without asking</label>
     <hr class="sep">
     <p class="p-kicker">Appearance</p>
-    <div class="modes" role="group" aria-label="Appearance">${appearance.MODES.map(m => `<button class="mode-btn" data-mode="${m.id}" aria-pressed="${appearance.get() === m.id}"><span class="mode-sw ${m.id}"></span>${m.name}</button>`).join('')}</div>
+    <label class="check re-switch"><input id="s-readera" type="checkbox" role="switch"${readera.enabled() ? ' checked' : ''}> <span><b>Look and feel like ReadEra</b><br><small>Menu drawer, list of books, full-screen reader with tools along the bottom. Lists and sync stay.</small></span></label>
+    <div class="field" id="s-readera-tone-f"${readera.enabled() ? '' : ' hidden'}><label for="s-readera-tone">ReadEra colours</label><select id="s-readera-tone">
+      <option value="auto"${readera.tone() === 'auto' ? ' selected' : ''}>Follow the system (light or dark)</option>
+      <option value="light"${readera.tone() === 'light' ? ' selected' : ''}>Light</option>
+      <option value="dark"${readera.tone() === 'dark' ? ' selected' : ''}>Dark</option></select></div>
+    <div class="modes${readera.enabled() ? ' muted' : ''}" role="group" aria-label="Appearance">${appearance.MODES.map(m => `<button class="mode-btn" data-mode="${m.id}" aria-pressed="${appearance.get() === m.id}"><span class="mode-sw ${m.id}"></span>${m.name}</button>`).join('')}</div>
     <hr class="sep">
     <p class="p-kicker">Controls</p>
     <div class="field"><label for="s-keypad">Keypad mode</label><select id="s-keypad">
@@ -691,6 +697,13 @@ $('#panel').addEventListener('change', async e => {
   if (panel && panel.kind === 'settings') {
     if (e.target.id === 's-device' && e.target.value.trim()) { await settings.update({ deviceName: e.target.value.trim() }); toast('Device name saved'); }
     else if (e.target.id === 's-autojump') await settings.update({ autoJump: e.target.checked });
+    else if (e.target.id === 's-readera') {
+      readera.setEnabled(e.target.checked);
+      $('#s-readera-tone-f').hidden = !e.target.checked;
+      $('#panel .modes')?.classList.toggle('muted', e.target.checked);
+      toast(e.target.checked ? 'ReadEra look on' : 'ReadEra look off');
+    }
+    else if (e.target.id === 's-readera-tone') readera.setTone(e.target.value);
     else if (e.target.id === 's-keypad') { await settings.update({ keypadMode: e.target.value }); window.dispatchEvent(new Event('harmonarium:keypad')); }
     return;
   }
@@ -743,7 +756,7 @@ const sky = (() => {
     ctx.globalAlpha = 1;
   }
   // Only the Space mode shows the sky; elsewhere the loop stops until Space comes back.
-  const space = () => document.documentElement.getAttribute('data-mode') === 'space';
+  const space = () => document.documentElement.getAttribute('data-mode') === 'space' && !document.documentElement.hasAttribute('data-readera');
   let running = false;
   function loop(t) {
     if (!space()) { running = false; return; }
@@ -753,6 +766,7 @@ const sky = (() => {
   function start() { if (!reduce && !running && space()) { running = true; requestAnimationFrame(loop); } }
   window.addEventListener('resize', resize);
   window.addEventListener('harmonarium:mode', start);
+  window.addEventListener('harmonarium:readera', start);
   resize();
   start();
   return {

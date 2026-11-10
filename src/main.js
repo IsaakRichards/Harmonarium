@@ -8,6 +8,7 @@ import * as dpad from "./dpad.js";
 import { toast } from "./util.js";
 import * as native from "./native.js";
 import * as updater from "./updater.js";
+import * as readera from "./readera.js";
 
 const TAB_KEY = "hm-tab";
 
@@ -15,6 +16,7 @@ function setTab(tab) {
   document.body.dataset.tab = tab;
   for (const b of document.querySelectorAll(".tabs [data-tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
   try { localStorage.setItem(TAB_KEY, tab); } catch { /* ignore */ }
+  readera.onTab(tab);
 }
 
 let scrollY = 0;
@@ -82,6 +84,13 @@ async function boot() {
   for (const b of document.querySelectorAll(".tabs [data-tab]")) {
     b.addEventListener("click", () => { setTab(b.dataset.tab); if (b.dataset.tab === "shelf") library.render(); });
   }
+  readera.init({
+    setTab: (t) => { setTab(t); if (t === "shelf") library.render(); },
+    getTab: () => document.body.dataset.tab || "shelf",
+    openSettings: () => lists.openSettings(),
+    addBooks: () => library.openAddBooks(),
+    sync: () => document.getElementById("sync").click(),
+  });
   let tab = "shelf";
   try { tab = localStorage.getItem(TAB_KEY) || "shelf"; } catch { /* ignore */ }
   setTab(tab === "lists" ? "lists" : "shelf");

@@ -8,6 +8,8 @@ const DEFAULTS = {
   syncKey: "",
   autoJump: false,
   theme: "light",
+  dayTheme: "light",  // Day/Night button: the last day theme (light | sepia)
+  nightTheme: "dark", //   and the last night theme (dark | black)
   fontSize: 100,
   fontFamily: "",
   lineHeight: "",
