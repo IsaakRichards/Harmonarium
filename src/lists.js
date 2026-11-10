@@ -638,10 +638,11 @@ $('#panel').addEventListener('click', async e => {
   if (e.target.closest('[data-close]')) return closePanel();
   if (!panel) return;
   if (panel.kind === 'settings') {
-    const mb = e.target.closest('[data-mode]');
+    // Only the mode buttons: <html> carries data-mode too, so a bare [data-mode] matched every click.
+    const mb = e.target.closest('.mode-btn[data-mode]');
     if (mb) {
       appearance.set(mb.dataset.mode);
-      for (const b of $('#panel').querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b === mb));
+      for (const b of $('#panel').querySelectorAll('.mode-btn[data-mode]')) b.setAttribute('aria-pressed', String(b === mb));
       return;
     }
     if (e.target.closest('[data-connect]')) {
