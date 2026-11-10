@@ -20,6 +20,32 @@ function setTab(tab) {
 }
 
 let scrollY = 0;
+
+// ---- Back (Android's back gesture, the browser's Back) leaves the book, not the app ----
+// The webview only goes back through its own history and otherwise closes the app, so an open
+// book gets a history entry of its own: Back closes Contents / Text first, then the book.
+let readerEntry = false;
+/** Resolves after the next history step (e.g. a panel that is closing), or after 400 ms. */
+const afterPop = () => new Promise((r) => {
+  const t = setTimeout(r, 400);
+  window.addEventListener("popstate", () => { clearTimeout(t); r(); }, { once: true });
+});
+async function pushReaderEntry() {
+  if (history.state && history.state.panelOpen) await afterPop(); // "Read now" from a book's panel
+  if (!document.body.classList.contains("reading") || readerEntry) return;
+  try { history.pushState({ reader: 1 }, ""); readerEntry = true; } catch { /* ignore */ }
+}
+function dropReaderEntry() {
+  if (!readerEntry) return;
+  readerEntry = false;
+  try { history.back(); } catch { /* ignore */ }
+}
+window.addEventListener("popstate", () => {
+  if (!readerEntry || !document.body.classList.contains("reading")) return;
+  readerEntry = false;
+  if (reader.api.overlayOpen()) { reader.api.closeOverlays(); pushReaderEntry(); return; }
+  reader.api.close();
+});
 let legendShown = false;
 
 /** Keypad mode: on for Sailfish OS (e.g. the Commodore Callback) and for devices with no
@@ -46,12 +72,13 @@ async function openBook(id) {
   dpad.focusPage();
   reader.syncPanelState();
   showReader(true);
+  pushReaderEntry();
   const ok = await reader.open(id).catch((err) => {
     console.error(err);
     toast("This book could not be opened");
     return false;
   });
-  if (!ok) { showReader(false); dpad.restoreFocus(); return; }
+  if (!ok) { showReader(false); dropReaderEntry(); dpad.restoreFocus(); return; }
   if (dpad.isKeypad() && !legendShown) {
     legendShown = true;
     toast("4 · 6 turn pages   5 menus   1 contents   3 text   * # size   0 theme");
@@ -67,7 +94,7 @@ async function boot() {
     listFor: (title) => lists.listFor(title),
   });
   reader.init({
-    close: async () => { showReader(false); await library.render(); dpad.restoreFocus(); },
+    close: async () => { showReader(false); dropReaderEntry(); await library.render(); dpad.restoreFocus(); },
     onFinished: (title) => lists.offerFinish(title),
     onKey: (e) => dpad.handle(e),
   });

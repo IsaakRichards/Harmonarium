@@ -78,12 +78,12 @@ export function init(h) {
   });
   $("re-fab").addEventListener("click", () => hooks.addBooks());
 
-  $("re-drawer").addEventListener("click", (e) => {
+  $("re-drawer").addEventListener("click", async (e) => {
     const go = e.target.closest("[data-re-go]");
     const list = e.target.closest("[data-re-list]");
     const act = e.target.closest("[data-re-act]");
     if (!go && !list && !act) return;
-    closeDrawer();
+    await closeDrawer(); // let its history step finish, so a panel opened next keeps its own
     if (go) hooks.setTab(go.dataset.reGo);
     else if (list) {
       hooks.setTab("lists");
@@ -93,6 +93,9 @@ export function init(h) {
     else if (act.dataset.reAct === "sync") hooks.sync();
     else if (act.dataset.reAct === "settings") hooks.openSettings();
   });
+
+  // Android's back gesture: the open drawer has a history entry, so Back closes it, not the app.
+  window.addEventListener("popstate", () => { if (drawerEntry) { drawerEntry = false; hideDrawer(); } });
 
   // Back / Esc closes the drawer, then the search row, before anything else.
   document.addEventListener("keydown", (e) => {
@@ -138,14 +141,29 @@ function closeSearch() {
   if (s?.value) { s.value = ""; s.dispatchEvent(new Event("input")); }
 }
 
+let drawerEntry = false;
+
 function openDrawer() {
   renderDrawerLists();
+  if (!drawerEntry) try { history.pushState({ reDrawer: 1 }, ""); drawerEntry = true; } catch { /* ignore */ }
   $("re-drawer").hidden = false;
   $("re-scrim").hidden = false;
   requestAnimationFrame(() => document.body.classList.add("re-drawer-open"));
   if (document.body.classList.contains("dpad")) setTimeout(() => $("re-drawer").querySelector("button")?.focus(), 60);
 }
+/** Close the drawer (and step back past its history entry). Resolves once that step is done. */
 export function closeDrawer() {
+  if ($("re-drawer").hidden) return Promise.resolve();
+  hideDrawer();
+  if (!drawerEntry) return Promise.resolve();
+  drawerEntry = false;
+  return new Promise((r) => {
+    const t = setTimeout(r, 400);
+    window.addEventListener("popstate", () => { clearTimeout(t); r(); }, { once: true });
+    try { history.back(); } catch { clearTimeout(t); r(); }
+  });
+}
+function hideDrawer() {
   if ($("re-drawer").hidden) return;
   document.body.classList.remove("re-drawer-open");
   $("re-drawer").hidden = true;
