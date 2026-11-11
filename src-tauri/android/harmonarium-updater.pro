@@ -2,3 +2,8 @@
 -keepclassmembers class com.isaakrichards.harmonarium.HarmonariumUpdater {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# …and on window.HarmonariumScreen (full screen while reading).
+-keepclassmembers class com.isaakrichards.harmonarium.HarmonariumScreen {
+    @android.webkit.JavascriptInterface <methods>;
+}

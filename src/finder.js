@@ -60,7 +60,10 @@ export function noteJump() {
 }
 function chip() {
   const c = $("jump-back");
-  if (c) c.hidden = !back.length;
+  if (!c) return;
+  c.hidden = !back.length;
+  const n = back.length ? ctx?.pageOf?.(back[back.length - 1]) : 0;
+  $("jump-label").textContent = n ? `to page ${n}` : "Back";
 }
 
 /** Jump somewhere, leaving a way back. */

@@ -4,6 +4,7 @@
 //
 // - copies the in-app updater (src-tauri/android/HarmonariumUpdater.kt) and its R8 keep rules
 // - registers the updater on the webview as window.HarmonariumUpdater (MainActivity)
+// - adds full screen while reading (src-tauri/android/HarmonariumScreen.kt) as window.HarmonariumScreen
 // - adds the REQUEST_INSTALL_PACKAGES permission so the updater can open the installer
 import fs from "node:fs";
 import path from "node:path";
@@ -18,6 +19,7 @@ const fail = (msg) => { console.error(`android-overlay: ${msg}`); process.exit(1
 if (!fs.existsSync(pkgDir)) fail(`${pkgDir} not found; run \`tauri android init\` first`);
 
 fs.copyFileSync(path.join(src, "HarmonariumUpdater.kt"), path.join(pkgDir, "HarmonariumUpdater.kt"));
+fs.copyFileSync(path.join(src, "HarmonariumScreen.kt"), path.join(pkgDir, "HarmonariumScreen.kt"));
 fs.copyFileSync(path.join(src, "harmonarium-updater.pro"), path.join(app, "harmonarium-updater.pro"));
 
 // MainActivity: hook the webview as it is created, before the page loads.
@@ -31,6 +33,7 @@ if (!main.includes("HarmonariumUpdater(")) {
   override fun onWebViewCreate(webView: android.webkit.WebView) {
     super.onWebViewCreate(webView)
     webView.addJavascriptInterface(HarmonariumUpdater(this, webView), "HarmonariumUpdater")
+    webView.addJavascriptInterface(HarmonariumScreen(this), "HarmonariumScreen")
   }
 }
 `;
@@ -57,4 +60,4 @@ if (fs.existsSync(paths) && !fs.readFileSync(paths, "utf8").includes("<cache-pat
   fail("file_paths.xml has no cache-path; the updater downloads into the cache folder");
 }
 
-console.log("android-overlay: updater added");
+console.log("android-overlay: updater and full-screen reading added");

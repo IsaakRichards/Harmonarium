@@ -158,10 +158,10 @@ check("A quick flick turns the page", d3 - d2 === c0.width, `${d2} → ${d3}`);
 // ---------------------------------------------------------------- fade and none
 async function setMode(mode) {
   await page.evaluate(() => document.body.classList.remove("immersive"));
-  await page.click("#btn-aa");
+  await page.click("#re-aa");
   await page.selectOption("#page-turn", mode);
   await page.waitForTimeout(1200);
-  await page.click("#btn-aa");
+  await page.click("#re-aa");
   await page.evaluate(() => document.activeElement && document.activeElement.blur());
 }
 await setMode("fade");
@@ -185,10 +185,17 @@ check("Switching back to Slide keeps the place and slides again", distinct(sr) >
 // ---------------------------------------------------------------- bookmarks, quotes, search (ReadEra's free tools)
 await page.waitForTimeout(500);
 await page.evaluate(() => document.body.classList.remove("immersive"));
-await page.click("#btn-bm");
+await page.click("#re-bm");
 await page.waitForTimeout(400);
 check("The bookmark button bookmarks the page", await page.evaluate(() => document.getElementById("btn-bm").classList.contains("on")));
 check("…and a ribbon marks it", await page.isVisible("#bm-ribbon"));
+check("ReadEra-style top bar shows the chapter and its pages", /page \d+\/\d+/.test(await page.innerText("#re-where")), await page.innerText("#re-where"));
+check("…and the bottom bar the pages of the book", /\d+ of \d+|%/.test(await page.innerText("#re-pages")), await page.innerText("#re-pages"));
+await page.evaluate(() => document.body.classList.add("immersive"));
+await page.waitForTimeout(400);
+check("Hidden bars leave nothing over the page", !(await page.isVisible("#reader-bar")) && !(await page.isVisible("#reader-foot")) && !(await page.isVisible("#re-light")));
+await page.evaluate(() => document.body.classList.remove("immersive"));
+await page.waitForTimeout(300);
 
 // Select a few words in the page: the selection bar appears, and Quote highlights them.
 const frame = page.frames().find((f) => f !== page.mainFrame() && f.url() !== "about:blank") || page.frames()[1];
@@ -206,7 +213,7 @@ if (await page.isVisible("#sel-bar")) {
   await page.waitForTimeout(600);
 }
 check("Quote draws a highlight in the book", (await page.$$("#viewer svg .hm-hl, #viewer g.hm-hl, #viewer .hm-hl")).length > 0);
-await page.click("#btn-toc");
+await page.click("#re-toc");
 await page.click('[data-nav="quotes"]');
 check("The quote is listed under Contents → Quotes", (await page.$$("#q-list .mark-row")).length === 1);
 await page.click('[data-nav="bookmarks"]');
@@ -232,17 +239,17 @@ check("Back returns to the page before the jump", (await page.evaluate(() => doc
 
 // Scroll mode: one long scroll instead of pages.
 await page.evaluate(() => document.body.classList.remove("immersive"));
-await page.click("#btn-aa");
+await page.click("#re-aa");
 await page.selectOption("#flow", "scrolled");
 await page.waitForTimeout(1500);
-await page.click("#btn-aa");
+await page.click("#re-aa");
 const sc = await page.evaluate(() => { const c = document.querySelector("#viewer .epub-container"); return c ? { h: c.scrollHeight, ch: c.clientHeight } : null; });
 check("Scroll mode lays the book out as one long scroll", sc && sc.h > sc.ch * 1.5, JSON.stringify(sc));
 await page.screenshot({ path: `${OUT}/scroll.png` });
-await page.click("#btn-aa");
+await page.click("#re-aa");
 await page.selectOption("#flow", "paginated");
 await page.waitForTimeout(1200);
-await page.click("#btn-aa");
+await page.click("#re-aa");
 
 // Library sections: the EPUB is under Books, and Favorites starts empty.
 await page.evaluate(() => document.body.classList.remove("immersive"));

@@ -56,6 +56,7 @@ export function unload() {
   loc = null;
   $("bm-ribbon").hidden = true;
   $("btn-bm").classList.remove("on");
+  $("re-bm")?.classList.remove("on");
 }
 
 const quotes = () => marks.filter((m) => m.kind === "quote");
@@ -89,6 +90,7 @@ export function onRelocated(l) {
   hideSelection();
   const on = !!bookmarkHere();
   $("btn-bm").classList.toggle("on", on);
+  $("re-bm")?.classList.toggle("on", on);
   $("btn-bm").setAttribute("aria-pressed", String(on));
   $("bm-ribbon").hidden = !on;
 }

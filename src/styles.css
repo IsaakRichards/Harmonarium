@@ -828,8 +828,7 @@ html[data-re-reader] .reader .btn.primary { background: var(--re-accent); color:
 html[data-re-reader] .aa-row input[type="range"] { accent-color: var(--re-accent); }
 html[data-re-reader] .reader { --r-bar: #ffffff; --r-bar-fg: #202124; }
 html[data-re-reader] body[data-rtheme="sepia"] .reader { --r-bar: #f8f0dc; --r-bar-fg: #4a3b28; }
-html[data-re-reader] body[data-rtheme="dark"] .reader { --r-bar: #121214; --r-bar-fg: #e6e3dc; }
-html[data-re-reader] body[data-rtheme="black"] .reader { --r-bar: #1b1b1b; --r-bar-fg: #d0cdc6; }
+html[data-re-reader] body[data-rtheme="dark"] .reader, html[data-re-reader] body[data-rtheme="black"] .reader { --r-bar: #005c75; --r-bar-fg: #ffffff; }
 html[data-re-reader] .reader-bar, html[data-re-reader] .reader-foot {
   position: absolute; left: 0; right: 0; z-index: 25; opacity: 1;
   background: var(--r-bar); color: var(--r-bar-fg); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
@@ -845,18 +844,14 @@ html[data-re-reader] body.immersive .reader-bar { transform: translateY(-100%); 
 html[data-re-reader] body.immersive .reader-foot { transform: translateY(100%); opacity: 0; }
 html[data-re-reader] #btn-toc, html[data-re-reader] #btn-aa, html[data-re-reader] #foot-chapter { display: none; }
 html[data-re-reader] #progress-slider { accent-color: var(--re-accent); }
-html[data-re-reader] .re-tools { display: flex; flex-basis: 100%; justify-content: space-around; }
-html[data-re-reader] .re-tool {
-  width: auto; height: auto; min-width: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 6px 10px; border-radius: 8px; font-size: 11px;
-}
+
 html[data-re-reader] #viewer {
   /* the page fills the screen; epub.js's gap (reader.js pageGap) gives the slim side margins */
-  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) calc(14px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
+  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 html[data-re-reader] .tap-zone { width: 30%; }
 html[data-re-reader] .re-track {
-  display: block; position: absolute; z-index: 1; pointer-events: none; height: 7px;
+  display: none; position: absolute; z-index: 1; pointer-events: none; height: 7px;
   left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px));
   bottom: calc(4px + env(safe-area-inset-bottom, 0px)); color: var(--r-fg); opacity: 0.4;
 }
@@ -1100,3 +1095,82 @@ html[data-re-reader] body.reading .toast {
   font: 14px Roboto, "Segoe UI", system-ui, sans-serif; box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.14);
 }
 html[data-re-reader] body.reading .toast button { color: #8ab4f8; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ---------- ReadEra-style reader: bars like ReadEra's ----------
+   Top: ← … search · contents · settings · ⋮, then the book, its author and "chapter • page x/y";
+   a brightness strip below. Bottom: "227 of 1918", day/night and bookmark, and a scrubber with a
+   dot for each chapter. A tap in the middle hides all of it (and Android's own bars). */
+.re-info, .re-light, .re-bottom, #re-marks, #re-bm, #re-toc, #re-aa, #re-daynight { display: none; }
+.re-scrub { display: contents; }
+html[data-re-reader] .reader-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: 8px; box-shadow: none;
+}
+html[data-re-reader] #reader-title { display: none; }
+html[data-re-reader] .reader-bar .r-btn { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: inherit; background: none; border: 0; }
+html[data-re-reader] #btn-back { margin-right: auto; font-size: 0; }
+html[data-re-reader] #btn-back::before { content: ""; width: 24px; height: 24px; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z'/%3E%3C/svg%3E") center / contain no-repeat; }
+html[data-re-reader] .reader-bar #btn-bm { display: none; }
+html[data-re-reader] .reader-bar #btn-find { order: 1; }
+html[data-re-reader] .reader-bar #re-toc { display: grid; order: 2; }
+html[data-re-reader] .reader-bar #re-aa { display: grid; order: 3; }
+html[data-re-reader] .reader-bar #btn-more { order: 4; }
+html[data-re-reader] .re-info {
+  order: 5; flex-basis: 100%; display: flex; flex-direction: column; min-width: 0;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+  font: 13px/1.35 var(--body);
+}
+html[data-re-reader] .re-info > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-re-reader] #re-book { font-size: 15px; font-weight: 700; }
+html[data-re-reader] #re-author, html[data-re-reader] #re-where { opacity: 0.8; }
+html[data-re-reader] #re-author:empty { display: none; }
+
+/* brightness strip */
+html[data-re-reader] .re-light {
+  display: flex; align-items: center; gap: 6px; position: absolute; left: 0; right: 0; z-index: 24;
+  top: var(--re-bar-h, 132px); height: 44px; padding: 0 max(4px, env(safe-area-inset-right, 0px)) 0 max(4px, env(safe-area-inset-left, 0px));
+  background: var(--r-bg); color: var(--r-fg);
+  transition: transform 0.2s ease-out, opacity 0.2s;
+}
+html[data-re-reader] .re-light .r-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: inherit; background: none; border: 0; opacity: 0.75; }
+html[data-re-reader] #re-bright { flex: 1; accent-color: var(--r-fg); opacity: 0.8; }
+html[data-re-reader] .re-light.folded { background: none; width: auto; left: auto; }
+html[data-re-reader] .re-light.folded #re-light-aa, html[data-re-reader] .re-light.folded #re-bright { display: none; }
+html[data-re-reader] .re-light.folded #re-light-fold svg { transform: rotate(180deg); }
+html[data-re-reader] body.immersive .re-light { transform: translateY(-40px); opacity: 0; pointer-events: none; }
+
+/* bottom bar */
+html[data-re-reader] .reader-foot { display: block; padding-top: 2px; box-shadow: none; }
+html[data-re-reader] #foot-page, html[data-re-reader] #foot-percent { display: none; }
+html[data-re-reader] .re-bottom { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 44px; }
+html[data-re-reader] #re-pages { font: 500 15px var(--body); }
+html[data-re-reader] .re-bottom-r { display: flex; justify-content: flex-end; }
+html[data-re-reader] .re-bottom-r .r-btn { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: inherit; background: none; border: 0; opacity: 0.85; }
+html[data-re-reader] #re-bm .bm-f { display: none; }
+html[data-re-reader] #re-bm.on .bm-o { display: none; }
+html[data-re-reader] #re-bm.on .bm-f { display: inline; }
+html[data-re-reader] #re-bm.on { color: #ff6e6e; opacity: 1; }
+html[data-re-reader] .re-scrub { display: block; position: relative; height: 30px; }
+html[data-re-reader] #progress-slider { position: absolute; inset: 0; width: 100%; margin: 0; z-index: 1; accent-color: var(--r-bar-fg); }
+html[data-re-reader] #re-marks { display: block; position: absolute; left: 8px; right: 8px; top: 50%; height: 0; pointer-events: none; }
+html[data-re-reader] #re-marks s { position: absolute; top: -2px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--r-bar-fg); opacity: 0.75; }
+
+/* hidden means hidden: nothing over the page at all */
+html[data-re-reader] body.immersive .reader-bar, html[data-re-reader] body.immersive .reader-foot { visibility: hidden; transition: transform 0.2s ease-out, opacity 0.2s, visibility 0s 0.2s; }
+html[data-re-reader] body.immersive .bm-ribbon { display: none; }
+
+/* "‹ to page 150   CLEAR" above the bottom bar */
+html[data-re-reader] .jump-back {
+  left: max(4px, env(safe-area-inset-left, 0px)); right: max(4px, env(safe-area-inset-right, 0px)); transform: none;
+  justify-content: space-between; background: none; box-shadow: none; color: var(--r-fg); border-radius: 0;
+  bottom: calc(var(--re-foot-h, 84px) + 4px);
+}
+html[data-re-reader] body.immersive .jump-back { display: none; }
+html[data-re-reader] .jump-back button { font: 13px var(--body); opacity: 0.7; padding: 8px 10px; gap: 2px; }
+html[data-re-reader] .jump-back .jb-x { display: none; }
+html[data-re-reader] .jump-back .jb-clear { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; }
+html[data-re-reader] .jump-back [data-dismiss-back] { position: absolute; left: 50%; transform: translateX(-50%); }
+.jump-back .jb-clear { display: none; }
+html[data-re-reader] #re-bm, html[data-re-reader] #re-daynight { display: grid; }

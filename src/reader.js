@@ -35,6 +35,7 @@ let finishOffered = false;
 let turner = null;     // page-turn animator (pageturn.js)
 let tocIndex = -1;     // the contents entry for the current page
 let wakeLock = null;
+let chapterPages = null; // { page, total } within the current chapter
 
 const NIGHT = new Set(["dark", "black"]);
 const isPdf = () => !!pdfView;
@@ -113,8 +114,20 @@ export function init(h) {
   }
   $("hyphens").addEventListener("change", async (e) => { await settings.update({ hyphens: e.target.checked }); applyUserStyle(); });
   $("keep-awake").addEventListener("change", async (e) => { await settings.update({ keepAwake: e.target.checked }); awake(!!meta); });
-  $("brightness").addEventListener("input", (e) => applyBrightness(Number(e.target.value) / 100));
-  $("brightness").addEventListener("change", (e) => settings.update({ brightness: Number(e.target.value) / 100 }));
+  for (const id of ["brightness", "re-bright"]) {
+    $(id).addEventListener("input", (e) => {
+      applyBrightness(Number(e.target.value) / 100);
+      for (const other of ["brightness", "re-bright"]) if (other !== id) $(other).value = e.target.value;
+    });
+    $(id).addEventListener("change", (e) => settings.update({ brightness: Number(e.target.value) / 100 }));
+  }
+  // ReadEra-style reader: the brightness strip under the top bar folds away with its chevron.
+  $("re-light-fold").addEventListener("click", async () => {
+    await settings.update({ lightStrip: settings.get().lightStrip === false });
+    $("re-light").classList.toggle("folded", settings.get().lightStrip === false);
+  });
+  $("re-light-aa").addEventListener("click", () => toggle("aa-panel"));
+  $("re-bm").addEventListener("click", () => marks.toggleBookmark());
 
   const slider = $("progress-slider");
   slider.addEventListener("change", () => {
@@ -133,13 +146,24 @@ export function init(h) {
     hideBanner();
   });
 
+  // The brightness strip and the back link sit just inside the bars, whatever their height.
+  if ("ResizeObserver" in window) {
+    const ro = new ResizeObserver(() => {
+      const st = document.getElementById("view-reader").style;
+      st.setProperty("--re-bar-h", `${$("reader-bar").offsetHeight}px`);
+      st.setProperty("--re-foot-h", `${$("reader-foot").offsetHeight}px`);
+    });
+    ro.observe($("reader-bar"));
+    ro.observe($("reader-foot"));
+  }
   marks.init();
   finder.init();
 
   // Keys are handled by dpad.js (see api() below).
   // Re-paginate on rotation / window resize.
   window.addEventListener("resize", relayout);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") awake(!!meta); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { awake(!!meta); fullScreen(!!meta); } });
+  window.addEventListener("harmonarium:readera", () => fullScreen(!!meta));
   applyBrightness(settings.get()?.brightness ?? 1);
 }
 
@@ -256,6 +280,11 @@ export async function open(id) {
   hideBanner();
 
   $("reader-title").textContent = meta.title;
+  $("re-book").textContent = meta.title;
+  $("re-author").textContent = meta.author || "";
+  $("re-where").textContent = "";
+  $("re-pages").textContent = "";
+  $("re-light").classList.toggle("folded", settings.get().lightStrip === false);
   // ReadEra opens a book full-screen; a tap in the middle brings the toolbars up.
   if (readera.readerOn()) document.body.classList.add("immersive");
   tocIndex = -1;
@@ -316,6 +345,7 @@ export async function open(id) {
 
   await db.put("books", { ...meta, lastOpenedAt: Date.now() });
   awake(true);
+  fullScreen(true);
   checkRemote(local); // runs in the background, then releases holdSaves
   return true;
 }
@@ -335,6 +365,10 @@ function loadAnnotations() {
     night: () => NIGHT.has(settings.get().theme),
     find: (q) => { closeOverlays(); finder.open(q); },
     pdfSnippet: (n) => pdfengine.pageSnippet(pdfDoc, n),
+    pageOf: (at) => {
+      if (pdfView) return pdfengine.parsePos(at)?.page || 0;
+      try { return book?.locations?.length() ? book.locations.locationFromCfi(at) + 1 : 0; } catch { return 0; }
+    },
     pages: () => (pdfView ? pdfView.pages : book?.locations?.length() || 0),
     pageNow: () => (pdfView ? pdfView.position().page : current && book?.locations?.length() ? book.locations.locationFromCfi(current.cfi) + 1 : 0),
     goToPage: (n) => (pdfView ? pdfView.goTo(n) : rendition.display(book.locations.cfiFromLocation(n - 1))),
@@ -488,6 +522,9 @@ function onRelocated(loc) {
   else percent = book.spine.length ? loc.start.index / book.spine.length : 0;
   const hit = tocEntryFor(loc.start.href);
   tocIndex = hit ? toc.indexOf(hit) : -1;
+  // Pages within this chapter (its spine file), as epub.js lays them out on screen.
+  const d = loc.start.displayed || {};
+  chapterPages = d.total > 0 && !scrolled() ? { page: Math.min(d.page, d.total), total: d.total } : null;
   moved(cfi, percent, hit?.label || "", loc.atEnd || (book.locations.length() && percent >= 0.995));
   marks.onRelocated(loc);
 }
@@ -495,7 +532,11 @@ function onRelocated(loc) {
 function onPdfMove({ page, frac, percent, atEnd }) {
   const hit = pdfTocFor(page);
   tocIndex = hit ? toc.indexOf(hit) : -1;
-  moved(pdfengine.pos(page, frac), percent, hit?.label || `Page ${page}`, atEnd);
+  // This chapter runs from its outline entry to the page before the next one.
+  const start = hit ? hit.page : 1;
+  const next = toc.filter((t) => t.page > start).reduce((m, t) => Math.min(m, t.page), (pdfView?.pages || page) + 1);
+  chapterPages = { page: page - start + 1, total: Math.max(1, next - start) };
+  moved(pdfengine.pos(page, frac), percent, hit?.label || "", atEnd);
   marks.onRelocated({ page });
   $("foot-page").textContent = `${page} / ${pdfView?.pages || ""}`;
 }
@@ -519,6 +560,12 @@ function updateFooter() {
     $("foot-page").textContent = `${book.locations.locationFromCfi(current.cfi) + 1} / ${book.locations.length()}`;
   } else if (!pdfView) $("foot-page").textContent = "";
   $("foot-chapter").textContent = current?.chapter || "";
+  // ReadEra-style reader: "Chapter 11 • page 14/15" up top, "227 of 1918" down below.
+  const cp = chapterPages ? `page ${chapterPages.page}/${chapterPages.total}` : "";
+  $("re-where").textContent = [current?.chapter, cp].filter(Boolean).join(" • ");
+  const total = pdfView ? pdfView.pages : book?.locations?.length() || 0;
+  const now = pdfView ? pdfView.position().page : total && current ? book.locations.locationFromCfi(current.cfi) + 1 : 0;
+  $("re-pages").textContent = total ? `${now} of ${total}` : pct(current?.percent);
   $("foot-percent").textContent = pct(current?.percent);
   $("progress-slider").value = Math.round((current?.percent || 0) * 1000);
   for (const a of $("toc-list").querySelectorAll("a")) a.classList.toggle("current", Number(a.dataset.i) === tocIndex);
@@ -611,6 +658,11 @@ async function setTheme(name) {
 function applyBrightness(b) {
   const v = Math.max(0.2, Math.min(1, Number.isFinite(b) ? b : 1));
   $("dim").style.opacity = String((1 - v) * 0.85);
+}
+
+/** Android: hide the status and navigation bars while a book is open in the ReadEra-style reader. */
+function fullScreen(on) {
+  try { window.HarmonariumScreen?.setImmersive(!!on && readera.readerOn()); } catch { /* not on Android */ }
 }
 
 /** Keep the screen on while a book is open (Settings → Text → Keep screen on). */
@@ -724,6 +776,7 @@ export function syncPanelState() {
   $("hyphens").checked = s.hyphens !== false;
   $("keep-awake").checked = !!s.keepAwake;
   $("brightness").value = String(Math.round((s.brightness ?? 1) * 100));
+  $("re-bright").value = $("brightness").value;
   $("page-turn-row").hidden = s.flow === "scrolled";
   $("zoom-label").textContent = `${Math.round((pdfView?.zoom || 1) * 100)}%`;
   applyBrightness(s.brightness ?? 1);
@@ -783,6 +836,8 @@ export async function closeBook() {
   pdfengine.close(pdfDoc);
   book = rendition = meta = current = pdfDoc = pdfView = null;
   awake(false);
+  chapterPages = null;
+  fullScreen(false);
   hideBanner();
   document.body.classList.remove("immersive", "pdf-mode", "flow-scroll");
   $("toc-drawer").classList.add("hidden");

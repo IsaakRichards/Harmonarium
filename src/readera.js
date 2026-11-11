@@ -232,7 +232,10 @@ export function track(percent, marks) {
     const key = marks.map((m) => m.toFixed(4)).join(",");
     if (box.dataset.key !== key) {
       box.dataset.key = key;
-      box.innerHTML = marks.map((m) => `<s style="left:${(m * 100).toFixed(3)}%"></s>`).join("");
+      const html = marks.map((m) => `<s style="left:${(m * 100).toFixed(3)}%"></s>`).join("");
+      box.innerHTML = html;
+      const dots = $("re-marks"); // the dotted chapter track under the bottom bar's scrubber
+      if (dots) dots.innerHTML = html;
     }
   }
 }
