@@ -27,7 +27,9 @@ jobs:
       - run: npm install
 
       - name: Install Chromium for Playwright
-        run: npx playwright install --with-deps chromium
+        # The runner image already has Chromium's system libraries; when Ubuntu's archive is
+        # unreachable, installing just the browser is enough.
+        run: npx playwright install --with-deps chromium || npx playwright install chromium
 
       - name: Build and test
         run: npm run test:reader
