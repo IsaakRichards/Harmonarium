@@ -16,11 +16,11 @@ export async function listDeviceBooks() {
   return d.books || [];
 }
 
-/** Read one of those EPUBs as a File, ready for the normal import path. */
+/** Read one of those books (EPUB or PDF) as a File, ready for the normal import path. */
 export async function readDeviceBook(book) {
   const r = await fetch(`/__file?t=${encodeURIComponent(token)}&path=${encodeURIComponent(book.path)}`);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return new File([await r.blob()], book.name, { type: "application/epub+zip" });
+  return new File([await r.blob()], book.name, { type: /\.pdf$/i.test(book.name) ? "application/pdf" : "application/epub+zip" });
 }
 
 /* ---------- in-app updater (Sailfish): the shell downloads the RPM and opens it ---------- */

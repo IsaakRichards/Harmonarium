@@ -14,12 +14,15 @@
       var c = { space: "#070914", dark: "#111214", light: "#f4f5f8", medieval: "#e8d9b5" }[m];
       if (c) document.querySelector('meta[name="theme-color"]').setAttribute("content", c);
       // ReadEra look & feel (src/readera.js) sits on top of any mode.
+      var solo = "%VITE_FLAVOR%" === "solo";
+      if (solo) { document.documentElement.setAttribute("data-solo", ""); document.title = "Scriptorium"; }
       try {
-        if (localStorage.getItem("hm-readera") === "1") {
+        if (solo || localStorage.getItem("hm-readera") === "1") {
           var t = localStorage.getItem("hm-readera-tone") || "auto";
+          if (t !== "light" && t !== "dark" && t !== "auto") t = "auto";
           if (t !== "light" && t !== "dark") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
           document.documentElement.setAttribute("data-readera", t);
-          document.documentElement.setAttribute("data-re-view", localStorage.getItem("hm-re-view") === "grid" ? "grid" : "list");
+          document.documentElement.setAttribute("data-re-view", !solo && localStorage.getItem("hm-re-view") === "grid" ? "grid" : "list");
           document.querySelector('meta[name="theme-color"]').setAttribute("content", t === "dark" ? "#202124" : "#ffffff");
         }
       } catch (e) {}
@@ -69,19 +72,30 @@
           <div class="searchbar">
             <svg class="search-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M10 3a7 7 0 0 1 5.6 11.2l4.6 4.6-1.4 1.4-4.6-4.6A7 7 0 1 1 10 3Zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z"/></svg>
             <input id="lib-search" type="search" autocomplete="off" placeholder="Search your shelf" aria-label="Search your shelf">
-            <label class="btn primary add-btn" title="Add EPUB files">
-              <input id="file-input" type="file" multiple accept=".epub,application/epub+zip,application/octet-stream">
+            <label class="btn primary add-btn" title="Add EPUB and PDF files">
+              <input id="file-input" type="file" multiple accept=".epub,.pdf,application/epub+zip,application/pdf,application/octet-stream">
               + Add books
             </label>
           </div>
           <div class="toolbar">
+            <select id="lib-section" class="seg-select" aria-label="Section">
+              <option value="books">Books</option>
+              <option value="docs">Documents</option>
+              <option value="favorites">Favorites</option>
+              <option value="toread">To read</option>
+              <option value="haveread">Have read</option>
+              <option value="authors">Authors</option>
+              <option value="series">Series</option>
+              <option value="collections">Collections</option>
+              <option value="trash">Trash</option>
+            </select>
             <select id="lib-sort" class="seg-select" aria-label="Sort">
               <option value="recent">Recently read</option>
               <option value="added">Recently added</option>
               <option value="title">Title</option>
               <option value="author">Author</option>
             </select>
-            <p class="hint">Your EPUBs live here. On desktop you can drop files straight onto the window.</p>
+            <p class="hint">Your EPUBs and PDFs live here. On desktop you can drop files straight onto the window.</p>
           </div>
         </div>
 
@@ -105,11 +119,13 @@
 
     <main class="wrap">
       <section id="tab-shelf" class="tab-only shelf-only">
+        <div id="lib-head" class="lib-head" hidden></div>
+        <div id="lib-groups" class="lib-groups" hidden></div>
         <div id="lib-grid" class="lib-grid"></div>
         <div id="lib-empty" class="lib-empty" hidden>
           <div class="lib-empty-glyph">✦</div>
-          <h2>Your shelf is empty</h2>
-          <p>Add EPUB files with <b>+ Add books</b>. Put the very same files on each device and your place follows you.</p>
+          <h2 id="lib-empty-h">Your shelf is empty</h2>
+          <p id="lib-empty-p">Add EPUB or PDF files with <b>+ Add books</b>. Put the very same files on each device and your place follows you.</p>
         </div>
       </section>
 
@@ -129,17 +145,27 @@
   <div class="re-scrim" id="re-scrim" hidden></div>
   <aside class="re-drawer" id="re-drawer" hidden aria-label="Menu">
     <div class="re-drawer-head">
-      <img src="/favicon.png" alt="" aria-hidden="true">
-      <b>Harmonarium</b>
+      <img src="/favicon.png" alt="" aria-hidden="true" id="re-drawer-icon">
+      <b id="re-drawer-name">Harmonarium</b>
       <small id="re-drawer-sync"></small>
     </div>
     <nav class="re-nav">
-      <button data-re-go="shelf"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM6 4h5v8l-2.5-1.5L6 12V4Z"/></svg><span class="re-nav-t">Books</span><span class="re-n" id="re-n-books"></span></button>
-      <button data-re-go="lists"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 13h2v-2H3v2Zm0 4h2v-2H3v2Zm0-8h2V7H3v2Zm4 4h14v-2H7v2Zm0 4h14v-2H7v2ZM7 7v2h14V7H7Z"/></svg><span class="re-nav-t">Lists</span></button>
-      <div class="re-nav-sub" id="re-nav-lists"></div>
+      <button data-re-sec="books"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM6 4h5v8l-2.5-1.5L6 12V4Z"/></svg><span class="re-nav-t">Books</span><span class="re-n" data-n="books"></span></button>
+      <button data-re-sec="docs"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm4 18H6V4h7v5h5v11ZM8 12h8v2H8v-2Zm0 4h8v2H8v-2Z"/></svg><span class="re-nav-t">Documents</span><span class="re-n" data-n="docs"></span></button>
+      <button data-re-sec="favorites"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27Z"/></svg><span class="re-nav-t">Favorites</span><span class="re-n" data-n="favorites"></span></button>
+      <button data-re-sec="toread"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7Z"/></svg><span class="re-nav-t">To read</span><span class="re-n" data-n="toread"></span></button>
+      <button data-re-sec="haveread"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z"/></svg><span class="re-nav-t">Have read</span><span class="re-n" data-n="haveread"></span></button>
+      <hr>
+      <button data-re-sec="authors"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z"/></svg><span class="re-nav-t">Authors</span></button>
+      <button data-re-sec="series"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 6H2v14a2 2 0 0 0 2 2h14v-2H4V6Zm16-4H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Zm0 14H8V4h12v12Z"/></svg><span class="re-nav-t">Series</span></button>
+      <button data-re-sec="collections"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2Z"/></svg><span class="re-nav-t">Collections</span></button>
+      <button data-re-sec="trash"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z"/></svg><span class="re-nav-t">Trash</span><span class="re-n" data-n="trash"></span></button>
+      <hr class="hm-only">
+      <button data-re-go="lists" class="hm-only"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 13h2v-2H3v2Zm0 4h2v-2H3v2Zm0-8h2V7H3v2Zm4 4h14v-2H7v2Zm0 4h14v-2H7v2ZM7 7v2h14V7H7Z"/></svg><span class="re-nav-t">Lists</span></button>
+      <div class="re-nav-sub hm-only" id="re-nav-lists"></div>
       <hr>
       <button data-re-act="add"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"/></svg><span class="re-nav-t">Add books</span></button>
-      <button data-re-act="sync"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 4V1L8 5l4 4V6a6 6 0 0 1 5.7 7.9l1.5 1.5A8 8 0 0 0 12 4Zm0 14a6 6 0 0 1-5.7-7.9L4.8 8.6A8 8 0 0 0 12 20v3l4-4-4-4v3Z"/></svg><span class="re-nav-t">Sync now</span></button>
+      <button data-re-act="sync" class="hm-only"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 4V1L8 5l4 4V6a6 6 0 0 1 5.7 7.9l1.5 1.5A8 8 0 0 0 12 4Zm0 14a6 6 0 0 1-5.7-7.9L4.8 8.6A8 8 0 0 0 12 20v3l4-4-4-4v3Z"/></svg><span class="re-nav-t">Sync now</span></button>
       <button data-re-act="settings"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Zm7.43-2.53a7.8 7.8 0 0 0 0-1.94l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.68-.97l-.38-2.65A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65a7.6 7.6 0 0 0-1.68.97l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.49.49 0 0 0 .12.64l2.11 1.65a7.8 7.8 0 0 0 0 1.94l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.39 1.08.72 1.68.97l.38 2.65c.04.24.25.42.49.42h4c.24 0 .45-.18.49-.42l.38-2.65a7.6 7.6 0 0 0 1.68-.97l2.49 1a.5.5 0 0 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65Z"/></svg><span class="re-nav-t">Settings</span></button>
     </nav>
   </aside>
@@ -151,17 +177,33 @@
       <div id="reader-title" class="reader-title"></div>
       <button id="btn-toc" class="r-btn" title="Contents" aria-label="Contents">☰</button>
       <button id="btn-aa" class="r-btn" title="Text settings" aria-label="Text settings">Aa</button>
+      <button id="btn-bm" class="r-btn" title="Bookmark" aria-label="Bookmark this page" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path class="bm-o" fill="currentColor" d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2Zm0 15-5-2.18L7 18V5h10v13Z"/><path class="bm-f" fill="currentColor" d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2Z"/></svg></button>
+      <button id="btn-find" class="r-btn" title="Find in book" aria-label="Find in book"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14Z"/></svg></button>
+      <button id="btn-more" class="r-btn" title="More" aria-label="More"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg></button>
     </header>
 
     <div id="viewer-wrap">
       <div id="viewer"></div>
       <div class="tap-zone left" id="tap-prev"></div>
       <div class="tap-zone right" id="tap-next"></div>
+      <div class="bm-ribbon" id="bm-ribbon" hidden aria-hidden="true"></div>
+      <div class="dim" id="dim" aria-hidden="true"></div>
+    </div>
+
+    <!-- selection bar: copy, quote, note, find -->
+    <div class="sel-bar" id="sel-bar" hidden role="toolbar" aria-label="Selection">
+      <button data-sel="copy">Copy</button><button data-sel="quote">Quote</button><button data-sel="note">Note</button><button data-sel="find">Find</button>
+    </div>
+    <!-- back to where you were before a jump -->
+    <div class="jump-back" id="jump-back" hidden>
+      <button title="Back to where you were"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62A8 8 0 0 1 20.1 16l2.37-.78A10.5 10.5 0 0 0 12.5 8Z"/></svg>Back</button>
+      <button data-dismiss-back title="Dismiss" aria-label="Dismiss">✕</button>
     </div>
 
     <footer id="reader-foot" class="reader-foot">
       <span id="foot-chapter"></span>
       <input id="progress-slider" type="range" min="0" max="1000" value="0" disabled aria-label="Position in book">
+      <span id="foot-page"></span>
       <span id="foot-percent">0%</span>
       <!-- ReadEra look: the reader's tools sit along the bottom -->
       <div class="re-tools">
@@ -187,15 +229,44 @@
         <h3>Contents</h3>
         <button class="r-btn" data-dismiss="toc-drawer" aria-label="Close">✕</button>
       </div>
-      <nav id="toc-list"></nav>
+      <div class="nav-tabs" role="tablist">
+        <button role="tab" data-nav="contents" aria-selected="true">Contents</button>
+        <button role="tab" data-nav="bookmarks" aria-selected="false">Bookmarks <span class="nav-n"></span></button>
+        <button role="tab" data-nav="quotes" aria-selected="false">Quotes <span class="nav-n"></span></button>
+        <button role="tab" data-nav="notes" aria-selected="false">Notes <span class="nav-n"></span></button>
+      </div>
+      <nav id="toc-list" data-navpane="contents"></nav>
+      <div class="mark-list" id="bm-list" data-navpane="bookmarks" hidden></div>
+      <div class="mark-list" id="q-list" data-navpane="quotes" hidden></div>
+      <div class="mark-list" id="n-list" data-navpane="notes" hidden></div>
+    </aside>
+
+    <aside id="find-panel" class="toc-drawer find-panel hidden" aria-label="Find in book">
+      <div class="toc-head">
+        <h3>Find in book</h3>
+        <button class="r-btn" data-dismiss="find-panel" aria-label="Close">✕</button>
+      </div>
+      <form id="find-form" class="find-form" role="search">
+        <input id="find-q" type="search" placeholder="Word or phrase" autocomplete="off" enterkeyhint="search">
+        <button class="btn small primary">Find</button>
+      </form>
+      <p class="find-status" id="find-status"></p>
+      <div class="find-results" id="find-results"></div>
     </aside>
 
     <aside id="aa-panel" class="aa-panel hidden">
-      <div class="aa-row">
+      <div class="aa-row aa-epub">
         <span>Size</span>
         <button id="font-dec" class="btn small">A−</button>
         <span id="font-size-label">100%</span>
         <button id="font-inc" class="btn small">A+</button>
+      </div>
+      <div class="aa-row aa-pdf">
+        <span>Zoom</span>
+        <button id="zoom-dec" class="btn small">−</button>
+        <span id="zoom-label">100%</span>
+        <button id="zoom-inc" class="btn small">+</button>
+        <button id="zoom-fit" class="btn small">Fit width</button>
       </div>
       <div class="aa-row">
         <span>Theme</span>
@@ -205,6 +276,10 @@
         <button class="swatch black" data-theme="black" title="Midnight"></button>
       </div>
       <div class="aa-row">
+        <span>Light</span>
+        <input id="brightness" type="range" min="20" max="100" value="100" aria-label="Brightness">
+      </div>
+      <div class="aa-row aa-epub">
         <span>Font</span>
         <select id="font-family">
           <option value="">Publisher</option>
@@ -214,7 +289,14 @@
           <option value="'Courier New', monospace">Mono</option>
         </select>
       </div>
-      <div class="aa-row">
+      <div class="aa-row aa-epub">
+        <span>Mode</span>
+        <select id="flow">
+          <option value="paginated">Pages</option>
+          <option value="scrolled">Scroll</option>
+        </select>
+      </div>
+      <div class="aa-row aa-epub" id="page-turn-row">
         <span>Turn</span>
         <select id="page-turn">
           <option value="slide">Slide</option>
@@ -222,7 +304,7 @@
           <option value="none">None</option>
         </select>
       </div>
-      <div class="aa-row">
+      <div class="aa-row aa-epub">
         <span>Spacing</span>
         <select id="line-height">
           <option value="">Publisher</option>
@@ -231,6 +313,25 @@
           <option value="1.9">Airy</option>
         </select>
       </div>
+      <div class="aa-row aa-epub">
+        <span>Margins</span>
+        <select id="margins">
+          <option value="s">Narrow</option>
+          <option value="m">Normal</option>
+          <option value="l">Wide</option>
+          <option value="xl">Extra wide</option>
+        </select>
+      </div>
+      <div class="aa-row aa-epub">
+        <span>Align</span>
+        <select id="text-align">
+          <option value="auto">Automatic</option>
+          <option value="justify">Justified</option>
+          <option value="left">Left</option>
+        </select>
+      </div>
+      <label class="aa-row aa-check aa-epub"><span>Hyphens</span><input id="hyphens" type="checkbox"> Break long words at line ends</label>
+      <label class="aa-row aa-check"><span>Screen</span><input id="keep-awake" type="checkbox"> Keep the screen on while reading</label>
     </aside>
   </section>
 

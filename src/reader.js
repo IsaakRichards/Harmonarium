@@ -5,6 +5,11 @@ import * as sync from "./sync.js";
 import { escapeHtml, pct, timeAgo, toast } from "./util.js";
 import * as pageturn from "./pageturn.js";
 import * as readera from "./readera.js";
+import * as pdfengine from "./pdfengine.js";
+import * as marks from "./marks.js";
+import * as finder from "./finder.js";
+import * as about from "./aboutbook.js";
+import * as sheet from "./sheet.js";
 
 const THEMES = {
   light: { bg: "#fbfaf7", fg: "#1d1b18", link: "#3b5bdb" },
@@ -12,22 +17,29 @@ const THEMES = {
   dark: { bg: "#23232b", fg: "#d9d6cf", link: "#9db4ff" },
   black: { bg: "#000000", fg: "#bdbab3", link: "#9db4ff" },
 };
+const MARGIN = { s: 0.55, m: 1, l: 1.7, xl: 2.6 };
 
 let book = null;      // epub.js Book
 let rendition = null; // epub.js Rendition
+let pdfDoc = null;    // pdf.js document
+let pdfView = null;   // pdfengine view
 let meta = null;      // our stored book record
-let toc = [];         // flattened table of contents
+let toc = [];         // flattened table of contents: { label, href | page, depth }
 let current = null;   // { cfi, percent, chapter }
 let lastSavedCfi = null;
 let holdSaves = false; // true while we check the sheet on open
 let initialCfi = null; // where the book first landed, so merely opening never counts as reading
 let pendingRemote = null;
-let hooks = { close: () => {}, onFinished: () => {}, onKey: () => {} };
+let hooks = { close: () => {}, onFinished: () => {}, onKey: () => {}, onBookChanged: () => {} };
 let finishOffered = false;
 let turner = null;     // page-turn animator (pageturn.js)
 let tocIndex = -1;     // the contents entry for the current page
+let wakeLock = null;
 
 const NIGHT = new Set(["dark", "black"]);
+const isPdf = () => !!pdfView;
+const scrolled = () => settings.get().flow === "scrolled";
+
 /** Theme names; the ReadEra look uses ReadEra's own (Day, Sepia, Night, Console). */
 function themeName(t) {
   const names = readera.on()
@@ -50,6 +62,8 @@ export function init(h) {
   $("btn-back").addEventListener("click", () => closeBook());
   $("btn-toc").addEventListener("click", () => toggle("toc-drawer"));
   $("btn-aa").addEventListener("click", () => toggle("aa-panel"));
+  $("btn-find").addEventListener("click", () => { closeOverlays(); finder.open(); });
+  $("btn-more").addEventListener("click", () => moreMenu());
   // ReadEra look: the same tools, along the bottom bar.
   $("re-toc").addEventListener("click", () => toggle("toc-drawer"));
   $("re-aa").addEventListener("click", () => toggle("aa-panel"));
@@ -59,10 +73,13 @@ export function init(h) {
   for (const b of document.querySelectorAll("[data-dismiss]")) {
     b.addEventListener("click", () => $(b.dataset.dismiss).classList.add("hidden"));
   }
+  // Navigation panel tabs: Contents, Bookmarks, Quotes, Notes.
+  for (const t of document.querySelectorAll("[data-nav]")) t.addEventListener("click", () => navTab(t.dataset.nav));
+
   // Edge tap zones: tap to turn; on touch they also let you drag the page from the edge.
   for (const [id, dir] of [["tap-prev", -1], ["tap-next", 1]]) {
     const z = $(id);
-    z.addEventListener("click", () => turn(dir));
+    z.addEventListener("click", () => { marks.hideSelection(); turn(dir); });
     z.addEventListener("touchstart", (e) => turner?.touch.start(e), { passive: true });
     z.addEventListener("touchmove", (e) => turner?.touch.move(e), { passive: true });
     z.addEventListener("touchend", (e) => turner?.touch.end(e), { passive: true });
@@ -73,29 +90,42 @@ export function init(h) {
     await settings.update({ pageTurn: e.target.value });
     if (rendition) await rebuild();
   });
+  $("flow").addEventListener("change", async (e) => {
+    await settings.update({ flow: e.target.value });
+    syncPanelState();
+    if (rendition) await rebuild();
+  });
 
   $("font-dec").addEventListener("click", () => setFontSize(settings.get().fontSize - 10));
   $("font-inc").addEventListener("click", () => setFontSize(settings.get().fontSize + 10));
+  $("zoom-dec").addEventListener("click", () => setZoom(pdfView ? pdfView.zoom / 1.2 : 1));
+  $("zoom-inc").addEventListener("click", () => setZoom(pdfView ? pdfView.zoom * 1.2 : 1));
+  $("zoom-fit").addEventListener("click", () => setZoom(1));
   for (const sw of document.querySelectorAll(".swatch")) {
     sw.addEventListener("click", () => setTheme(sw.dataset.theme));
   }
-  $("font-family").addEventListener("change", async (e) => {
-    await settings.update({ fontFamily: e.target.value });
-    applyUserStyle();
-  });
-  $("line-height").addEventListener("change", async (e) => {
-    await settings.update({ lineHeight: e.target.value });
-    applyUserStyle();
-  });
+  for (const [id, key] of [["font-family", "fontFamily"], ["line-height", "lineHeight"], ["text-align", "textAlign"], ["margins", "margin"]]) {
+    $(id).addEventListener("change", async (e) => {
+      await settings.update({ [key]: e.target.value });
+      applyUserStyle();
+      if (key === "margin") relayout();
+    });
+  }
+  $("hyphens").addEventListener("change", async (e) => { await settings.update({ hyphens: e.target.checked }); applyUserStyle(); });
+  $("keep-awake").addEventListener("change", async (e) => { await settings.update({ keepAwake: e.target.checked }); awake(!!meta); });
+  $("brightness").addEventListener("input", (e) => applyBrightness(Number(e.target.value) / 100));
+  $("brightness").addEventListener("change", (e) => settings.update({ brightness: Number(e.target.value) / 100 }));
 
   const slider = $("progress-slider");
   slider.addEventListener("change", () => {
-    if (!book?.locations?.length()) return;
-    rendition.display(book.locations.cfiFromPercentage(slider.value / 1000));
+    finder.noteJump();
+    const f = slider.value / 1000;
+    if (pdfView) pdfView.goToPercent(f);
+    else if (book?.locations?.length()) rendition.display(book.locations.cfiFromPercentage(f));
   });
 
   $("sync-jump").addEventListener("click", () => {
-    if (pendingRemote) rendition.display(pendingRemote.cfi);
+    if (pendingRemote) display(pendingRemote.cfi);
     hideBanner();
   });
   $("sync-stay").addEventListener("click", async () => {
@@ -103,17 +133,30 @@ export function init(h) {
     hideBanner();
   });
 
+  marks.init();
+  finder.init();
+
   // Keys are handled by dpad.js (see api() below).
   // Re-paginate on rotation / window resize.
   window.addEventListener("resize", relayout);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") awake(!!meta); });
+  applyBrightness(settings.get()?.brightness ?? 1);
 }
 
 function toggle(id) {
   for (const other of ["toc-drawer", "aa-panel"]) if (other !== id) $(other).classList.add("hidden");
+  finder.close();
+  marks.hideSelection();
   $(id).classList.toggle("hidden");
   if (id === "toc-drawer" && !$(id).classList.contains("hidden")) {
-    $("toc-list").querySelector("a.current")?.scrollIntoView({ block: "center" });
+    navTab(document.querySelector("[data-nav][aria-selected='true']")?.dataset.nav || "contents");
   }
+}
+
+function navTab(name) {
+  for (const t of document.querySelectorAll("[data-nav]")) t.setAttribute("aria-selected", String(t.dataset.nav === name));
+  for (const p of document.querySelectorAll("[data-navpane]")) p.hidden = p.dataset.navpane !== name;
+  if (name === "contents") $("toc-list").querySelector("a.current")?.scrollIntoView({ block: "center" });
 }
 
 /** Day ↔ Night, remembering which day and night themes were last used. */
@@ -123,9 +166,9 @@ async function dayNight() {
   toast(themeName(settings.get().theme));
 }
 
-/** What the d-pad navigator needs to drive the reader. */
 /** Turn a page (+1 forward, -1 back) with the chosen animation. */
 function turn(dir) {
+  if (pdfView) return pdfView.turn(dir);
   if (!rendition) return;
   if (turner) return turner.turn(dir);
   return dir > 0 ? rendition.next() : rendition.prev();
@@ -133,10 +176,36 @@ function turn(dir) {
 
 let wheelAt = 0;
 function onWheel(e) {
+  if (pdfView || scrolled()) return; // those scroll natively
   const d = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
   if (Math.abs(d) < 4 || Date.now() - wheelAt < 350) return;
   wheelAt = Date.now();
   turn(d > 0 ? 1 : -1);
+}
+
+/** The reader's ⋮ menu. */
+async function moreMenu() {
+  if (!meta) return;
+  const fav = !!meta.favorite;
+  const v = await sheet.menu({
+    title: meta.title,
+    items: [
+      { label: "Find in book", value: "find", icon: "⌕" },
+      { label: "Go to page", value: "goto", icon: "↧" },
+      { label: $("btn-bm").classList.contains("on") ? "Remove bookmark" : "Add bookmark", value: "bm", icon: "🔖" },
+      { label: fav ? "Remove from Favorites" : "Add to Favorites", value: "fav", icon: fav ? "★" : "☆" },
+      { label: "About this book", value: "about", icon: "ⓘ" },
+    ],
+  });
+  if (v === "find") finder.open();
+  else if (v === "goto") finder.goTo();
+  else if (v === "bm") marks.toggleBookmark();
+  else if (v === "about") about.show(meta.id);
+  else if (v === "fav") {
+    meta = { ...meta, favorite: !fav };
+    await db.put("books", meta);
+    toast(fav ? "Removed from Favorites" : "Added to Favorites");
+  }
 }
 
 export const api = {
@@ -145,24 +214,30 @@ export const api = {
   barsVisible: () => !document.body.classList.contains("immersive"),
   showBars: () => document.body.classList.remove("immersive"),
   hideBars: () => { closeOverlays(); document.body.classList.add("immersive"); },
-  overlayOpen: () => ["toc-drawer", "aa-panel", "sync-banner"].some((id) => !$(id).classList.contains("hidden")),
+  overlayOpen: () => sheet.isOpen() || finder.isOpen() || marks.selectionOpen() ||
+    ["toc-drawer", "aa-panel", "sync-banner"].some((id) => !$(id).classList.contains("hidden")),
   closeOverlays,
   close: () => closeBook(),
   // Keypad shortcuts (see dpad.js)
   toggleContents: () => { document.body.classList.remove("immersive"); toggle("toc-drawer"); },
   toggleText: () => { document.body.classList.remove("immersive"); toggle("aa-panel"); },
-  textSize: (step) => setFontSize(settings.get().fontSize + step * 10),
+  textSize: (step) => (pdfView ? setZoom(pdfView.zoom * (step > 0 ? 1.2 : 1 / 1.2)) : setFontSize(settings.get().fontSize + step * 10)),
   cycleTheme: () => {
     const order = ["light", "sepia", "dark", "black"];
     const next = order[(order.indexOf(settings.get().theme) + 1) % order.length];
     setTheme(next);
     toast(themeName(next));
   },
+  bookmark: () => marks.toggleBookmark(),
+  find: () => finder.open(),
 };
 
 function closeOverlays() {
+  if (sheet.isOpen()) sheet.close(null);
   $("toc-drawer").classList.add("hidden");
   $("aa-panel").classList.add("hidden");
+  finder.close();
+  marks.hideSelection();
   if (pendingRemote) hideBanner();
 }
 
@@ -184,50 +259,117 @@ export async function open(id) {
   // ReadEra opens a book full-screen; a tap in the middle brings the toolbars up.
   if (readera.on()) document.body.classList.add("immersive");
   tocIndex = -1;
+  current = null;
   $("viewer").innerHTML = "";
   $("progress-slider").disabled = true;
   document.body.dataset.rtheme = settings.get().theme;
 
-  book = ePub(buf);
-  await book.ready;
-  const nav = await book.loaded.navigation;
-  toc = flattenToc(nav.toc);
-  renderToc();
+  const pdf = meta.format === "pdf" || pdfengine.isPdf("", "", buf);
+  document.body.classList.toggle("pdf-mode", pdf);
+  document.body.classList.toggle("flow-scroll", !pdf && scrolled());
+  syncPanelState();
 
-  makeRendition();
-
-  // Cached location index → accurate percentages immediately.
-  const savedLocations = await db.get("locations", id);
-  if (savedLocations) book.locations.load(savedLocations);
-
-  await rendition.display(local?.cfi || undefined);
-  tuneManager();
-
-  if (!savedLocations) {
-    book.locations.generate(1600).then(async () => {
-      if (!book) return;
-      await db.put("locations", book.locations.save(), id);
-      enableSlider();
-      if (current) updateFooter();
-    }).catch(() => {});
+  if (pdf) {
+    pdfDoc = await pdfengine.load(buf);
+    toc = await pdfengine.outline(pdfDoc);
+    renderToc();
+    pdfView = pdfengine.view($("viewer"), pdfDoc, {
+      onMove: onPdfMove,
+      onTap: (zone) => {
+        marks.hideSelection();
+        if (zone === "middle") toggleBars();
+        else { if (!document.body.classList.contains("immersive") && readera.on()) closeOverlays(); turn(zone === "next" ? 1 : -1); }
+      },
+    });
+    loadAnnotations();
+    await pdfView.start(local?.cfi);
+    $("progress-slider").disabled = false;
+    if (!meta.pages) meta = { ...meta, pages: pdfDoc.numPages };
   } else {
-    enableSlider();
+    book = ePub(buf);
+    await book.ready;
+    const nav = await book.loaded.navigation;
+    toc = flattenToc(nav.toc);
+    renderToc();
+
+    makeRendition();
+    loadAnnotations();
+
+    // Cached location index → accurate percentages immediately.
+    const savedLocations = await db.get("locations", id);
+    if (savedLocations) book.locations.load(savedLocations);
+
+    await rendition.display(local?.cfi || undefined);
+    tuneManager();
+
+    if (!savedLocations) {
+      book.locations.generate(1600).then(async () => {
+        if (!book) return;
+        await db.put("locations", book.locations.save(), id);
+        enableSlider();
+        if (current) updateFooter();
+      }).catch(() => {});
+    } else {
+      enableSlider();
+    }
   }
 
   await db.put("books", { ...meta, lastOpenedAt: Date.now() });
+  awake(true);
   checkRemote(local); // runs in the background, then releases holdSaves
   return true;
 }
 
-/** ReadEra look: the text runs nearly to the screen's edges, with a slim margin each side. */
+/** What marks.js and finder.js need to know about the open book. */
+function loadAnnotations() {
+  const ctx = {
+    bookId: meta.id,
+    isPdf: !!pdfView,
+    book,
+    pdfDoc,
+    rendition: () => rendition,
+    current: () => current,
+    display,
+    jump: (at) => { finder.go(at); if (window.innerWidth < 700) $("toc-drawer").classList.add("hidden"); },
+    chapterFor,
+    night: () => NIGHT.has(settings.get().theme),
+    find: (q) => { closeOverlays(); finder.open(q); },
+    pdfSnippet: (n) => pdfengine.pageSnippet(pdfDoc, n),
+    pages: () => (pdfView ? pdfView.pages : book?.locations?.length() || 0),
+    pageNow: () => (pdfView ? pdfView.position().page : current && book?.locations?.length() ? book.locations.locationFromCfi(current.cfi) + 1 : 0),
+    goToPage: (n) => (pdfView ? pdfView.goTo(n) : rendition.display(book.locations.cfiFromLocation(n - 1))),
+    goToPercent: (f) => (pdfView ? pdfView.goToPercent(f) : book?.locations?.length() ? rendition.display(book.locations.cfiFromPercentage(f)) : rendition.display(book.spine.get(Math.floor(f * (book.spine.length - 1)))?.href)),
+  };
+  marks.load(ctx);
+  finder.load(ctx);
+}
+
+/** Go to a stored position (an EPUB CFI or href, or a PDF "pdf:…" position). */
+function display(at) {
+  if (!at) return;
+  if (pdfView) return pdfView.display(at);
+  return rendition?.display(at);
+}
+
+function toggleBars() {
+  document.body.classList.toggle("immersive");
+  $("toc-drawer").classList.add("hidden");
+  $("aa-panel").classList.add("hidden");
+}
+
+/** The side margins: ReadEra's slim default, scaled by the Margins setting. */
 function pageGap() {
   const w = $("viewer")?.clientWidth || window.innerWidth;
-  return 2 * Math.round(Math.min(48, Math.max(14, w * 0.05)));
+  const f = MARGIN[settings.get().margin] || 1;
+  return 2 * Math.round(Math.min(48, Math.max(14, w * 0.05)) * f);
 }
-/** Recalculate margins (ReadEra look) and re-paginate, e.g. after rotating the phone. */
+const wantGap = () => (readera.on() || (settings.get().margin && settings.get().margin !== "m") ? pageGap() : undefined);
+
+/** Recalculate margins and re-paginate, e.g. after rotating the phone. */
 function relayout() {
+  if (pdfView) { pdfView.resize(); return; }
   if (!rendition) return;
-  const gap = readera.on() ? pageGap() : undefined;
+  const gap = wantGap();
   rendition.settings.gap = gap;
   if (rendition.manager?.settings) rendition.manager.settings.gap = gap;
   rendition.resize();
@@ -235,20 +377,24 @@ function relayout() {
 
 /** Create the rendition for the current page-turn mode (slide needs epub.js's continuous manager). */
 function makeRendition() {
-  const mode = pageturn.MODES.includes(settings.get().pageTurn) ? settings.get().pageTurn : "slide";
+  const flow = scrolled() ? "scrolled" : "paginated";
+  let mode = pageturn.MODES.includes(settings.get().pageTurn) ? settings.get().pageTurn : "slide";
+  if (flow === "scrolled") mode = "none";
+  const gap = wantGap();
   rendition = book.renderTo("viewer", {
-    manager: pageturn.managerFor(mode),
+    manager: flow === "scrolled" ? "continuous" : pageturn.managerFor(mode),
     width: "100%",
     height: "100%",
-    flow: "paginated",
-    spread: "auto",
+    flow,
+    spread: flow === "scrolled" ? "none" : "auto",
     minSpreadWidth: 900,
-    ...(readera.on() ? { gap: pageGap() } : {}),
+    ...(gap ? { gap } : {}),
   });
   for (const [name, t] of Object.entries(THEMES)) {
     rendition.themes.register(name, {
       body: { background: `${t.bg} !important`, color: `${t.fg} !important` },
       "a, a:link, a:visited": { color: `${t.link} !important` },
+      "::selection": { background: "rgba(66, 133, 244, 0.35)" },
     });
   }
   rendition.themes.select(settings.get().theme);
@@ -257,9 +403,11 @@ function makeRendition() {
     injectUserStyle(contents);
     guardLinks(contents);
     contents.document.addEventListener("wheel", onWheel, { passive: true });
+    contents.document.addEventListener("selectionchange", () => marks.onSelectionChange(contents.document));
   });
   wireGestures(mode);
   rendition.on("relocated", onRelocated);
+  rendition.on("selected", (cfiRange, contents) => marks.onSelected(cfiRange, contents));
   turner = pageturn.attach(rendition, mode, $("viewer"));
 }
 
@@ -269,19 +417,22 @@ function tuneManager() {
   if (m && m.layout && turner?.mode === "slide") m.settings.offset = Math.max(500, m.layout.width * 2);
 }
 
-/** Switch page-turn mode on an open book, keeping the reader's place. */
+/** Switch page-turn mode or flow on an open book, keeping the reader's place. */
 async function rebuild() {
+  if (!book) return;
   const cfi = current?.cfi;
   turner?.destroy(); turner = null;
   try { rendition.destroy(); } catch { /* ignore */ }
   $("viewer").innerHTML = "";
+  document.body.classList.toggle("flow-scroll", scrolled());
   makeRendition();
   await rendition.display(cfi || undefined);
   tuneManager();
+  marks.applyHighlights();
 }
 
 function enableSlider() {
-  $("progress-slider").disabled = !book?.locations?.length();
+  $("progress-slider").disabled = !pdfView && !book?.locations?.length();
 }
 
 async function checkRemote(local) {
@@ -300,7 +451,7 @@ async function checkRemote(local) {
     if (dismissed && Number(dismissed) >= Number(remote.updated_at)) return;
 
     if (settings.get().autoJump) {
-      await rendition.display(remote.cfi);
+      await display(remote.cfi);
       toast(`Resumed from ${remote.device_name} · ${pct(remote.percent)}`);
     } else {
       showBanner(remote);
@@ -337,21 +488,36 @@ function onRelocated(loc) {
   else percent = book.spine.length ? loc.start.index / book.spine.length : 0;
   const hit = tocEntryFor(loc.start.href);
   tocIndex = hit ? toc.indexOf(hit) : -1;
-  current = { cfi, percent, chapter: hit?.label || "" };
+  moved(cfi, percent, hit?.label || "", loc.atEnd || (book.locations.length() && percent >= 0.995));
+  marks.onRelocated(loc);
+}
+
+function onPdfMove({ page, frac, percent, atEnd }) {
+  const hit = pdfTocFor(page);
+  tocIndex = hit ? toc.indexOf(hit) : -1;
+  moved(pdfengine.pos(page, frac), percent, hit?.label || `Page ${page}`, atEnd);
+  marks.onRelocated({ page });
+  $("foot-page").textContent = `${page} / ${pdfView?.pages || ""}`;
+}
+
+/** Shared by both engines: the reader is now at `cfi`. */
+function moved(cfi, percent, chapter, atEnd) {
+  current = { cfi, percent, chapter };
   $("viewer").dataset.cfi = cfi; // where the reader is (handy for tests and debugging)
   if (holdSaves && initialCfi === null) initialCfi = cfi;
-  if (!holdSaves && !finishOffered && (loc.atEnd || (book.locations.length() && percent >= 0.995))) {
+  if (!holdSaves && !finishOffered && atEnd) {
     finishOffered = true;
-    hooks.onFinished(meta.title);
+    hooks.onFinished(meta.title, meta.id);
   }
   updateFooter();
   if (!holdSaves && cfi !== lastSavedCfi) saveProgress();
 }
 
 function updateFooter() {
-  if (book?.locations?.length() && current) {
+  if (!pdfView && book?.locations?.length() && current) {
     current.percent = book.locations.percentageFromCfi(current.cfi);
-  }
+    $("foot-page").textContent = `${book.locations.locationFromCfi(current.cfi) + 1} / ${book.locations.length()}`;
+  } else if (!pdfView) $("foot-page").textContent = "";
   $("foot-chapter").textContent = current?.chapter || "";
   $("foot-percent").textContent = pct(current?.percent);
   $("progress-slider").value = Math.round((current?.percent || 0) * 1000);
@@ -386,18 +552,34 @@ function tocEntryFor(href) {
     return h && (h === base || base.endsWith(h) || h.endsWith(base));
   }) || null;
 }
+/** PDFs: the last outline entry that starts on or before the page. */
+function pdfTocFor(page) {
+  let hit = null;
+  for (const t of toc) if (t.page <= page && (!hit || t.page >= hit.page)) hit = t;
+  return hit;
+}
+/** The chapter title for a CFI, an href or (PDF) a page number. */
+function chapterFor(where) {
+  if (pdfView) return pdfTocFor(typeof where === "number" ? where : pdfengine.parsePos(where)?.page || 0)?.label || "";
+  try {
+    const s = String(where || "");
+    const sec = s.startsWith("epubcfi(") ? book.spine.get(s) : null;
+    return tocEntryFor(sec ? sec.href : s)?.label || "";
+  } catch { return ""; }
+}
 
 function renderToc() {
   const list = $("toc-list");
   list.innerHTML = toc.length
     ? toc.map((t, i) =>
-        `<a href="#" data-i="${i}" style="padding-left:${12 + t.depth * 16}px">${escapeHtml(t.label)}</a>`
+        `<a href="#" data-i="${i}" style="padding-left:${12 + t.depth * 16}px"><span>${escapeHtml(t.label)}</span>${t.page ? `<small>${t.page}</small>` : ""}</a>`
       ).join("")
     : `<p class="hint">This book has no table of contents.</p>`;
   for (const a of list.querySelectorAll("a")) {
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      rendition.display(toc[Number(a.dataset.i)].href);
+      const t = toc[Number(a.dataset.i)];
+      finder.go(t.page ? pdfengine.pos(t.page) : t.href);
       $("toc-drawer").classList.add("hidden");
     });
   }
@@ -412,15 +594,43 @@ async function setFontSize(v) {
   rendition?.themes.fontSize(`${size}%`);
 }
 
+function setZoom(z) {
+  if (!pdfView) return;
+  const now = pdfView.setZoom(z);
+  $("zoom-label").textContent = `${Math.round(now * 100)}%`;
+}
+
 async function setTheme(name) {
+  const wasNight = NIGHT.has(settings.get().theme);
   await settings.update({ theme: name, [NIGHT.has(name) ? "nightTheme" : "dayTheme"]: name });
   document.body.dataset.rtheme = name;
   rendition?.themes.select(name);
+  if (wasNight !== NIGHT.has(name)) marks.retint();
+}
+
+function applyBrightness(b) {
+  const v = Math.max(0.2, Math.min(1, Number.isFinite(b) ? b : 1));
+  $("dim").style.opacity = String((1 - v) * 0.85);
+}
+
+/** Keep the screen on while a book is open (Settings → Text → Keep screen on). */
+async function awake(on) {
+  try {
+    if (on && settings.get().keepAwake && "wakeLock" in navigator && document.visibilityState === "visible") {
+      if (!wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener?.("release", () => { wakeLock = null; }); }
+    } else if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch { wakeLock = null; }
 }
 
 /** Where each top-level chapter starts, 0–1 (exact once the location index exists). */
 function chapterMarks() {
-  if (!book || !toc.length) return [];
+  if (!toc.length) return [];
+  if (pdfView) {
+    const n = Math.max(1, pdfView.pages - 1);
+    const out = toc.filter((t) => t.depth === 0).map((t) => (t.page - 1) / n).filter((p) => p > 0.001 && p < 0.999);
+    return out.length > 80 ? [] : [...new Set(out)];
+  }
+  if (!book) return [];
   const locs = book.locations?.length() ? book.locations._locations || [] : [];
   const n = book.spine?.length || 1;
   const out = [];
@@ -438,11 +648,22 @@ function chapterMarks() {
   return out.length > 80 ? [] : [...new Set(out)];
 }
 
-/** ReadEra look: little top and bottom padding, justified and hyphenated text. */
+/** Alignment and hyphenation: "auto" justifies in the ReadEra look and keeps the publisher's otherwise. */
+function alignCss() {
+  const { textAlign = "auto", hyphens = true } = settings.get();
+  const justify = textAlign === "justify" || (textAlign === "auto" && readera.on());
+  const rules = [];
+  if (justify) rules.push("p { text-align: justify !important; }");
+  else if (textAlign === "left") rules.push("p, div, li, blockquote { text-align: left !important; }");
+  if (hyphens && (justify || textAlign === "left")) rules.push("p { -webkit-hyphens: auto; hyphens: auto; }");
+  if (!hyphens) rules.push("p, div, span, li { -webkit-hyphens: manual !important; hyphens: manual !important; }");
+  return rules.join("\n");
+}
+
+/** ReadEra look: little top and bottom padding. */
 function readeraCss() {
   if (!readera.on()) return "";
-  return `body { padding-top: 12px !important; padding-bottom: 4px !important; }
-p { text-align: justify; -webkit-hyphens: auto; hyphens: auto; }`;
+  return "body { padding-top: 12px !important; padding-bottom: 4px !important; }";
 }
 
 function userCss() {
@@ -450,7 +671,7 @@ function userCss() {
   const rules = [];
   if (fontFamily) rules.push(`font-family: ${fontFamily} !important;`);
   if (lineHeight) rules.push(`line-height: ${lineHeight} !important;`);
-  const extra = readeraCss();
+  const extra = `${readeraCss()}\n${alignCss()}`;
   if (!rules.length) return extra;
   return `body, p, div, span, li, blockquote, td { ${rules.join(" ")} }\n${extra}`;
 }
@@ -463,6 +684,8 @@ function guardLinks(contents) {
     if (a && /^(https?:|mailto:|tel:)/i.test(a.getAttribute("href"))) {
       e.preventDefault(); e.stopPropagation();
       toast("Links to websites are turned off in books");
+    } else if (a) {
+      finder.noteJump(); // a footnote or cross-reference: leave a way back
     }
   }, true);
 }
@@ -495,13 +718,22 @@ export function syncPanelState() {
   $("font-family").value = s.fontFamily;
   $("line-height").value = s.lineHeight;
   $("page-turn").value = s.pageTurn || "slide";
+  $("flow").value = s.flow || "paginated";
+  $("text-align").value = s.textAlign || "auto";
+  $("margins").value = s.margin || "m";
+  $("hyphens").checked = s.hyphens !== false;
+  $("keep-awake").checked = !!s.keepAwake;
+  $("brightness").value = String(Math.round((s.brightness ?? 1) * 100));
+  $("page-turn-row").hidden = s.flow === "scrolled";
+  $("zoom-label").textContent = `${Math.round((pdfView?.zoom || 1) * 100)}%`;
+  applyBrightness(s.brightness ?? 1);
 }
 
 // ------------------------------------------------------------ gestures
 
 function wireGestures(mode) {
   // In slide mode the page follows the finger (pageturn.js); otherwise a swipe turns the page.
-  if (mode !== "slide") {
+  if (mode !== "slide" && !scrolled()) {
     let startX = 0, startY = 0, startT = 0;
     rendition.on("touchstart", (e) => {
       const t = e.changedTouches[0];
@@ -520,9 +752,16 @@ function wireGestures(mode) {
     if (e.target?.closest?.("a")) return;
     const sel = e.view?.getSelection?.();
     if (sel && String(sel).length) return;
-    document.body.classList.toggle("immersive");
-    $("toc-drawer").classList.add("hidden");
-    $("aa-panel").classList.add("hidden");
+    if (marks.selectionOpen()) { marks.hideSelection(); return; }
+    // Scroll mode has no tap zones over the page (they'd block scrolling): the frame decides.
+    if (scrolled()) {
+      const fr = e.view?.frameElement?.getBoundingClientRect?.();
+      const x = (fr ? fr.left : 0) + e.clientX;
+      const w = $("viewer-wrap").clientWidth || window.innerWidth;
+      if (x < w * 0.3) return turn(-1);
+      if (x > w * 0.7) return turn(1);
+    }
+    toggleBars();
   });
   // Keys pressed while the book's frame has focus.
   rendition.on("keydown", (e) => hooks.onKey(e));
@@ -534,13 +773,20 @@ export async function closeBook() {
   const moved = current && current.cfi !== lastSavedCfi && (!holdSaves || current.cfi !== initialCfi);
   if (moved) await saveProgress();
   sync.flushNow();
+  marks.unload();
+  finder.unload();
+  if (sheet.isOpen()) sheet.close(null);
   turner?.destroy(); turner = null;
   try { rendition?.destroy(); } catch { /* ignore */ }
   try { book?.destroy(); } catch { /* ignore */ }
-  book = rendition = meta = current = null;
+  try { pdfView?.destroy(); } catch { /* ignore */ }
+  pdfengine.close(pdfDoc);
+  book = rendition = meta = current = pdfDoc = pdfView = null;
+  awake(false);
   hideBanner();
-  document.body.classList.remove("immersive");
+  document.body.classList.remove("immersive", "pdf-mode", "flow-scroll");
   $("toc-drawer").classList.add("hidden");
   $("aa-panel").classList.add("hidden");
+  $("foot-page").textContent = "";
   hooks.close();
 }

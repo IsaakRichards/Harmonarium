@@ -21,7 +21,11 @@ concurrency:
 
 jobs:
   build:
-    name: Linux (x64)
+    name: Linux (x64) · ${{ matrix.flavor == 'solo' && 'Scriptorium' || 'Harmonarium' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [harmonarium, solo]
     # 22.04 on purpose: an AppImage built on an older glibc runs on more distros.
     runs-on: ubuntu-22.04
     steps:
@@ -30,6 +34,10 @@ jobs:
       - name: Stamp the release version
         if: inputs.version
         run: node scripts/set-version.mjs "${{ inputs.version }}"
+
+      # Harmonarium, or Scriptorium (the standalone ReadEra-style reader). See src/flavor.js.
+      - name: Pick the app
+        run: node scripts/flavor.mjs ${{ matrix.flavor }}
 
       - name: System libraries for Tauri
         run: |
@@ -48,6 +56,11 @@ jobs:
 
       - run: npm install
 
+      # Scriptorium has its own icon (app-icon-solo.png, copied over app-icon.png by flavor.mjs).
+      - name: App icons
+        if: matrix.flavor == 'solo'
+        run: npx tauri icon app-icon.png
+
       # With the updater signing key set (see README), also build the signed update files
       # (.sig) that the in-app updater checks. Without it the build is the same as before.
       - name: Build
@@ -56,7 +69,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ "${{ matrix.flavor }}" = "harmonarium" ]; then
             npx tauri build --bundles appimage,deb,rpm --config '{"bundle":{"createUpdaterArtifacts":true}}'
           else
             echo "::notice::No TAURI_SIGNING_PRIVATE_KEY secret, so no signed update files. See README."
@@ -65,7 +78,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Harmonarium-Linux
+          name: ${{ matrix.flavor == 'solo' && 'Scriptorium' || 'Harmonarium' }}-Linux
           path: |
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb

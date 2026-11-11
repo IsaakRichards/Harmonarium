@@ -16,6 +16,13 @@ const DEFAULTS = {
   sort: "recent",
   keypadMode: "auto", // "auto" | "on" | "off"
   pageTurn: "slide",  // "slide" | "fade" | "none"
+  flow: "paginated",  // "paginated" (pages) | "scrolled" (one long scroll)
+  margin: "m",        // "s" | "m" | "l" | "xl" side margins
+  textAlign: "auto",  // "auto" (justified in the ReadEra look) | "justify" | "left"
+  hyphens: true,
+  brightness: 1,      // 0.2–1, a dimmer laid over the page
+  keepAwake: true,    // keep the screen on while a book is open
+  section: "books",   // library section: books | docs | favorites | toread | haveread | authors | series | collections | trash
 };
 
 let current = null;

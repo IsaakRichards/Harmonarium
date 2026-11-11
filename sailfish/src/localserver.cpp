@@ -39,6 +39,7 @@ QByteArray mimeFor(const QString &path)
     if (ext == QLatin1String("woff2")) return "font/woff2";
     if (ext == QLatin1String("woff")) return "font/woff";
     if (ext == QLatin1String("epub")) return "application/epub+zip";
+    if (ext == QLatin1String("pdf")) return "application/pdf";
     return "application/octet-stream";
 }
 
@@ -143,7 +144,7 @@ void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QBy
         if (path == QLatin1String("/__file")) {
             const QString file = query.queryItemValue(QStringLiteral("path"), QUrl::FullyDecoded);
             if (!isAllowedBook(file)) {
-                respond(socket, 403, "text/plain", "Not an EPUB in an allowed folder", head);
+                respond(socket, 403, "text/plain", "Not a book in an allowed folder", head);
                 return;
             }
             QFile f(file);
@@ -151,7 +152,8 @@ void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QBy
                 respond(socket, 404, "text/plain", "Cannot read file", head);
                 return;
             }
-            respond(socket, 200, "application/epub+zip", f.readAll(), head, true);
+            respond(socket, 200, file.endsWith(QLatin1String(".pdf"), Qt::CaseInsensitive) ? "application/pdf" : "application/epub+zip",
+                    f.readAll(), head, true);
             return;
         }
         if (path == QLatin1String("/__update/start")) {
@@ -225,7 +227,7 @@ QStringList LocalServer::bookRoots() const
 bool LocalServer::isAllowedBook(const QString &path) const
 {
     const QString c = QFileInfo(path).canonicalFilePath();
-    if (c.isEmpty() || !c.endsWith(QLatin1String(".epub"), Qt::CaseInsensitive))
+    if (c.isEmpty() || !(c.endsWith(QLatin1String(".epub"), Qt::CaseInsensitive) || c.endsWith(QLatin1String(".pdf"), Qt::CaseInsensitive)))
         return false;
     for (const QString &root : bookRoots())
         if (c.startsWith(root + QLatin1Char('/')))
@@ -237,7 +239,7 @@ QByteArray LocalServer::listBooks() const
 {
     QJsonArray books;
     for (const QString &root : bookRoots()) {
-        QDirIterator it(root, QStringList() << QStringLiteral("*.epub") << QStringLiteral("*.EPUB"),
+        QDirIterator it(root, QStringList() << QStringLiteral("*.epub") << QStringLiteral("*.EPUB") << QStringLiteral("*.pdf") << QStringLiteral("*.PDF"),
                         QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
         while (it.hasNext() && books.size() < kMaxBooks) {
             const QFileInfo fi(it.next());

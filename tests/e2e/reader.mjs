@@ -182,6 +182,78 @@ const r0 = await container();
 const sr = await sampleWhile(() => page.keyboard.press("ArrowRight"));
 check("Switching back to Slide keeps the place and slides again", distinct(sr) >= 6, `${distinct(sr)} frames from ${r0.left}`);
 
+// ---------------------------------------------------------------- bookmarks, quotes, search (ReadEra's free tools)
+await page.waitForTimeout(500);
+await page.evaluate(() => document.body.classList.remove("immersive"));
+await page.click("#btn-bm");
+await page.waitForTimeout(400);
+check("The bookmark button bookmarks the page", await page.evaluate(() => document.getElementById("btn-bm").classList.contains("on")));
+check("…and a ribbon marks it", await page.isVisible("#bm-ribbon"));
+
+// Select a few words in the page: the selection bar appears, and Quote highlights them.
+const frame = page.frames().find((f) => f !== page.mainFrame() && f.url() !== "about:blank") || page.frames()[1];
+await frame.evaluate(() => {
+  const p = [...document.querySelectorAll("p")].find((el) => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().left < innerWidth && el.textContent.length > 40);
+  const t = p.firstChild;
+  const r = document.createRange();
+  r.setStart(t, 4); r.setEnd(t, 30);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+});
+await page.waitForSelector("#sel-bar:not([hidden])", { timeout: 5000 }).catch(() => {});
+check("Selecting text shows the Copy / Quote / Note / Find bar", await page.isVisible("#sel-bar"));
+if (await page.isVisible("#sel-bar")) {
+  await page.click('#sel-bar [data-sel="quote"]');
+  await page.waitForTimeout(600);
+}
+check("Quote draws a highlight in the book", (await page.$$("#viewer svg .hm-hl, #viewer g.hm-hl, #viewer .hm-hl")).length > 0);
+await page.click("#btn-toc");
+await page.click('[data-nav="quotes"]');
+check("The quote is listed under Contents → Quotes", (await page.$$("#q-list .mark-row")).length === 1);
+await page.click('[data-nav="bookmarks"]');
+check("…and the bookmark under Bookmarks", (await page.$$("#bm-list .mark-row")).length === 1);
+await page.click('[data-dismiss="toc-drawer"]');
+await page.screenshot({ path: `${OUT}/quote.png` });
+
+await page.click("#btn-find");
+await page.fill("#find-q", "shield wall");
+await page.press("#find-q", "Enter");
+await page.waitForFunction(() => /found|Nothing/.test(document.getElementById("find-status").textContent), null, { timeout: 20000 });
+const hits = (await page.$$("#find-results .find-hit")).length;
+check("Find in book searches every chapter", hits > 4, `${hits} hits · ${await page.innerText("#find-status")}`);
+await page.screenshot({ path: `${OUT}/find.png` });
+const before = await cfi();
+await page.click("#find-results .find-hit:last-child");
+await page.waitForTimeout(1200);
+check("A result jumps there", (await cfi()) !== before, `${before} → ${await cfi()}`);
+check("…leaving a Back chip", await page.isVisible("#jump-back"));
+await page.click("#jump-back button:first-child");
+await page.waitForTimeout(1200);
+check("Back returns to the page before the jump", (await page.evaluate(() => document.getElementById("btn-bm").classList.contains("on"))), await cfi());
+
+// Scroll mode: one long scroll instead of pages.
+await page.evaluate(() => document.body.classList.remove("immersive"));
+await page.click("#btn-aa");
+await page.selectOption("#flow", "scrolled");
+await page.waitForTimeout(1500);
+await page.click("#btn-aa");
+const sc = await page.evaluate(() => { const c = document.querySelector("#viewer .epub-container"); return c ? { h: c.scrollHeight, ch: c.clientHeight } : null; });
+check("Scroll mode lays the book out as one long scroll", sc && sc.h > sc.ch * 1.5, JSON.stringify(sc));
+await page.screenshot({ path: `${OUT}/scroll.png` });
+await page.click("#btn-aa");
+await page.selectOption("#flow", "paginated");
+await page.waitForTimeout(1200);
+await page.click("#btn-aa");
+
+// Library sections: the EPUB is under Books, and Favorites starts empty.
+await page.evaluate(() => document.body.classList.remove("immersive"));
+await page.click("#btn-back");
+await page.waitForTimeout(600);
+check("The EPUB sits in Books", (await page.$$(".lib-card")).length === 1 && (await page.innerText(".lib-fmt")).startsWith("EPUB"));
+await page.selectOption("#lib-section", "favorites");
+await page.waitForTimeout(400);
+check("Favorites starts empty", (await page.$$(".lib-card")).length === 0);
+await page.selectOption("#lib-section", "books");
+
 check("No page errors", errors.length === 0, errors.slice(0, 5).join(" | "));
 
 await writeFile(`${OUT}/results.json`, JSON.stringify({ results, errors }, null, 2));

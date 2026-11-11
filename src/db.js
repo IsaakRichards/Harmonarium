@@ -8,9 +8,14 @@
 //   locations – epub.js generated location index (JSON string) keyed by book id
 //   outbox    – progress entries waiting to be pushed to the sheet, keyed by book id
 //   kv        – settings and misc values
+//   marks     – bookmarks and quotes (a quote with a note is a note):
+//               { id, bookId, kind: "bookmark"|"quote", cfi, text, note, chapter, percent, createdAt }
+//
+// Book records also carry (all optional): format ("epub"|"pdf"), favorite, status
+// (""|"toread"|"haveread"), collections [names], series, seriesIndex, trashedAt, pages.
 
 const DB_NAME = "harmonarium";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORES = {
   books: "id",
   files: null,
@@ -18,6 +23,7 @@ const STORES = {
   locations: null,
   outbox: "book_id",
   kv: null,
+  marks: "id",
 };
 
 let dbPromise;
@@ -60,4 +66,11 @@ export const del = (store, key) => tx(store, "readwrite", (s) => s.delete(key));
 
 export async function deleteBook(id) {
   await Promise.all(["books", "files", "progress", "locations", "outbox"].map((s) => del(s, id)));
+  for (const m of await getAll("marks")) if (m.bookId === id) await del("marks", m.id);
+}
+
+/** Bookmarks and quotes of one book, in reading order where we know it. */
+export async function marksFor(bookId) {
+  return (await getAll("marks")).filter((m) => m.bookId === bookId)
+    .sort((a, b) => (a.percent ?? 0) - (b.percent ?? 0) || a.createdAt - b.createdAt);
 }

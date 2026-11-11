@@ -3,10 +3,12 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "description": "Harmonarium: a galaxy-themed EPUB reader and reading tracker for Android, Linux and Windows, synced through your own Google Sheet.",
+  "description": "Harmonarium: a galaxy-themed EPUB and PDF reader and reading tracker for Android, Linux and Windows, synced through your own Google Sheet. Also builds Scriptorium, the standalone ReadEra-style reader.",
   "scripts": {
     "dev": "vite",
+    "dev:solo": "vite --mode solo",
     "build": "vite build",
+    "build:solo": "vite build --mode solo",
     "preview": "vite preview",
     "tauri": "tauri",
     "icons": "tauri icon app-icon.png",
@@ -14,7 +16,8 @@
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --apk",
     "build:sailfish": "vite build --outDir sailfish/www --emptyOutDir",
-    "test:reader": "vite build && node tests/e2e/reader.mjs"
+    "test:reader": "vite build && node tests/e2e/reader.mjs",
+    "flavor": "node scripts/flavor.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -22,7 +25,8 @@
     "@tauri-apps/plugin-opener": "^2.0.0",
     "@tauri-apps/plugin-process": "^2.0.0",
     "@tauri-apps/plugin-updater": "^2.0.0",
-    "epubjs": "^0.3.93"
+    "epubjs": "^0.3.93",
+    "pdfjs-dist": "^6.2.108"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

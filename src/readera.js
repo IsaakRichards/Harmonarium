@@ -12,6 +12,8 @@
 // index.html applies it before first paint as <html data-readera="light|dark">; the
 // styles live in the "ReadEra look" section at the end of src/styles.css.
 
+import { SOLO, APP_NAME, ICON as APP_ICON } from "./flavor.js";
+
 const KEY = "hm-readera";
 const TONE_KEY = "hm-readera-tone";
 const VIEW_KEY = "hm-re-view";
@@ -25,11 +27,12 @@ const darkQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: 
 function read(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
 function write(key, v) { try { localStorage.setItem(key, v); } catch { /* ignore */ } }
 
-export const enabled = () => read(KEY, "") === "1";
+/** Scriptorium (the standalone build) always wears the ReadEra look. */
+export const enabled = () => SOLO || read(KEY, "") === "1";
 export const tone = () => read(TONE_KEY, "auto");
 /** True while the ReadEra look is showing. */
 export const on = () => !!root.getAttribute("data-readera");
-export const view = () => (read(VIEW_KEY, "list") === "grid" ? "grid" : "list");
+export const view = () => (!SOLO && read(VIEW_KEY, "list") === "grid" ? "grid" : "list");
 
 function resolvedTone() {
   const t = tone();
@@ -59,7 +62,8 @@ export function setTone(t) { write(TONE_KEY, t); apply(); }
 
 // ------------------------------------------------------------------ app bar, drawer, FAB
 
-let hooks = { setTab: () => {}, getTab: () => "shelf", openSettings: () => {}, addBooks: () => {}, sync: () => {} };
+let hooks = { setTab: () => {}, getTab: () => "shelf", openSettings: () => {}, addBooks: () => {}, sync: () => {},
+  setSection: () => {}, getSection: () => "books", counts: async () => ({}), sectionTitle: () => "Books" };
 
 export function init(h) {
   hooks = { ...hooks, ...h };
@@ -67,7 +71,10 @@ export function init(h) {
   // An appearance-mode change rewrites the bar colour; keep ReadEra's while it's on.
   window.addEventListener("harmonarium:mode", () => { if (on()) apply(); });
 
-  $("re-menu").addEventListener("click", openDrawer);
+  $("re-drawer-name").textContent = APP_NAME;
+  $("re-drawer-icon").src = APP_ICON;
+  // Inside a group (an author, a series, a collection) the ☰ becomes a back arrow.
+  $("re-menu").addEventListener("click", () => (document.body.classList.contains("in-group") ? hooks.leaveGroup?.() : openDrawer()));
   $("re-scrim").addEventListener("click", closeDrawer);
   $("re-search").addEventListener("click", toggleSearch);
   $("re-more").addEventListener("click", () => hooks.openSettings());
@@ -82,9 +89,11 @@ export function init(h) {
     const go = e.target.closest("[data-re-go]");
     const list = e.target.closest("[data-re-list]");
     const act = e.target.closest("[data-re-act]");
-    if (!go && !list && !act) return;
+    const sec = e.target.closest("[data-re-sec]");
+    if (!go && !list && !act && !sec) return;
     await closeDrawer(); // let its history step finish, so a panel opened next keeps its own
-    if (go) hooks.setTab(go.dataset.reGo);
+    if (sec) { hooks.setTab("shelf"); hooks.setSection(sec.dataset.reSec); syncChrome("shelf"); }
+    else if (go) hooks.setTab(go.dataset.reGo);
     else if (list) {
       hooks.setTab("lists");
       const col = document.querySelectorAll("#board .col:not(.col-new)")[Number(list.dataset.reList)];
@@ -118,15 +127,26 @@ export function onTab(tab) {
 function syncChrome(tab = hooks.getTab()) {
   const title = $("re-title");
   if (!title) return;
-  title.textContent = tab === "lists" ? "Lists" : "Books";
+  title.textContent = tab === "lists" ? "Lists" : hooks.sectionTitle();
   const v = $("re-view");
   const grid = view() === "grid";
   v.hidden = tab === "lists";
   v.setAttribute("aria-label", grid ? "Show as list" : "Show as grid");
   v.title = grid ? "List" : "Grid";
   v.innerHTML = grid ? ICON.list : ICON.grid;
-  for (const b of document.querySelectorAll("[data-re-go]")) b.setAttribute("aria-current", String(b.dataset.reGo === tab));
+  for (const b of document.querySelectorAll("[data-re-go]")) b.setAttribute("aria-current", String(b.dataset.reGo === tab && tab !== "shelf"));
+  const sec = hooks.getSection();
+  for (const b of document.querySelectorAll("[data-re-sec]")) b.setAttribute("aria-current", String(tab === "shelf" && b.dataset.reSec === sec));
+  const grouped = ["authors", "series", "collections"].includes(sec) && !document.body.classList.contains("in-group");
+  v.hidden = tab === "lists" || grouped || SOLO; // list/grid views are a paid extra in ReadEra; the standalone app keeps to the list
+  const m = $("re-menu");
+  const back = document.body.classList.contains("in-group");
+  m.innerHTML = back ? ICON.back : ICON.menu;
+  m.setAttribute("aria-label", back ? "Back" : "Open menu");
+  m.title = back ? "Back" : "Menu";
 }
+/** Refresh the bar title and buttons (e.g. after entering an author or a collection). */
+export const refresh = () => syncChrome();
 
 function searchInput() { return hooks.getTab() === "lists" ? $("q") : $("lib-search"); }
 
@@ -174,9 +194,11 @@ export const drawerOpen = () => !$("re-drawer").hidden;
 
 /** The user's lists, read from the board, become drawer entries (like ReadEra's To read / Have read). */
 function renderDrawerLists() {
+  hooks.counts().then((n) => {
+    for (const el of document.querySelectorAll("#re-drawer [data-n]")) el.textContent = n[el.dataset.n] ? String(n[el.dataset.n]) : "";
+  }).catch(() => {});
+  if (SOLO) { $("re-drawer-sync").textContent = ""; return; }
   const cols = [...document.querySelectorAll("#board .col:not(.col-new)")];
-  const books = document.querySelectorAll("#lib-grid .lib-card").length;
-  $("re-n-books").textContent = $("lib-search").value ? "" : String(books || "");
   const sheet = document.getElementById("sheet-name")?.textContent || "";
   const state = document.querySelector("#sync .sync-t")?.textContent || "";
   $("re-drawer-sync").textContent = [sheet, state].filter(Boolean).join(" · ");
@@ -214,6 +236,8 @@ export function track(percent, marks) {
 }
 
 export const ICON = {
+  menu: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M3 6h18v2H3V6Zm0 5h18v2H3v-2Zm0 5h18v2H3v-2Z"/></svg>',
+  back: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z"/></svg>',
   grid: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"/></svg>',
   list: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 5h4v4H3V5Zm6 1h12v2H9V6ZM3 10h4v4H3v-4Zm6 1h12v2H9v-2Zm-6 4h4v4H3v-4Zm6 1h12v2H9v-2Z"/></svg>',
   shelf: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M6 2h12a2 2 0 0 1 2 2v18l-8-4-8 4V4a2 2 0 0 1 2-2Zm0 2v14.8l6-3 6 3V4H6Z"/></svg>',

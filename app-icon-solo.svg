@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Scriptorium: an open book under a Gothic window, with a quill. Original artwork. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f6fd0"/>
+      <stop offset="1" stop-color="#1b4a96"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9eef7"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <!-- the arch of the window -->
+  <path d="M292 640V430c0-130 98-218 220-262 122 44 220 132 220 262v210" fill="none" stroke="#ffffff" stroke-opacity=".22" stroke-width="34" stroke-linecap="round"/>
+  <path d="M512 196v444" stroke="#ffffff" stroke-opacity=".16" stroke-width="22"/>
+  <!-- the open book -->
+  <path d="M512 520c-70-46-170-62-292-52v290c122-10 222 6 292 52Z" fill="url(#page)"/>
+  <path d="M512 520c70-46 170-62 292-52v290c-122-10-222 6-292 52Z" fill="url(#page)"/>
+  <path d="M512 520v290" stroke="#c9d3e6" stroke-width="10"/>
+  <g fill="none" stroke="#9fb0cf" stroke-width="14" stroke-linecap="round">
+    <path d="M276 548c68-4 128 6 180 26M276 608c68-4 128 6 180 26M276 668c68-4 128 6 180 26"/>
+    <path d="M568 574c52-20 112-30 180-26M568 634c52-20 112-30 180-26"/>
+  </g>
+  <!-- the quill -->
+  <path d="M640 702C676 584 748 452 846 352c-30 120-80 238-170 338Z" fill="#ffd54f"/>
+  <path d="M640 702c40-96 104-214 190-320" fill="none" stroke="#b8860b" stroke-width="10" stroke-linecap="round"/>
+  <path d="M640 702l-14 46 30-34Z" fill="#3a2a0c"/>
+</svg>

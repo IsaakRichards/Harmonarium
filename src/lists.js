@@ -7,6 +7,7 @@ import { toast } from './util.js';
 import * as updater from './updater.js';
 import * as appearance from './appearance.js';
 import * as readera from './readera.js';
+import { SOLO, APP_NAME } from './flavor.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -588,7 +589,30 @@ async function loadPicks(title) {
   pickState = { status: any ? 'done' : 'error', items: items.slice(0, 24) };
   $('#panel').dataset.for = ''; renderPanel();
 }
+/** Scriptorium's settings: no sheet, no lists, one look. */
+function renderSoloSettings(p) {
+  const st = settings.get();
+  p.innerHTML = `<button class="btn small p-close" data-close>Close</button>
+    <p class="p-kicker">Settings</p>
+    <h2 class="p-h" style="text-align:left">${esc(APP_NAME)}</h2>
+    <p class="p-desc">Your books, bookmarks and quotes stay on this device.</p>
+    <hr class="sep">
+    <p class="p-kicker">Appearance</p>
+    <div class="field"><label for="s-readera-tone">Colours</label><select id="s-readera-tone">
+      <option value="auto"${readera.tone() === 'auto' ? ' selected' : ''}>Follow the system (light or dark)</option>
+      <option value="light"${readera.tone() === 'light' ? ' selected' : ''}>Light</option>
+      <option value="dark"${readera.tone() === 'dark' ? ' selected' : ''}>Dark</option></select></div>
+    <hr class="sep">
+    <p class="p-kicker">Controls</p>
+    <div class="field"><label for="s-keypad">Keypad mode</label><select id="s-keypad">
+      <option value="auto"${st.keypadMode === 'auto' ? ' selected' : ''}>Automatic (on for keypad devices)</option>
+      <option value="on"${st.keypadMode === 'on' ? ' selected' : ''}>On</option>
+      <option value="off"${st.keypadMode === 'off' ? ' selected' : ''}>Off</option></select></div>
+    <p class="p-desc">Keypad mode keeps the focus ring visible and adds number keys: 2 4 6 8 move, 5 selects. In a book 4/6 turn pages, 1 Contents, 3 Text, * and # change the size, 0 changes the theme.</p>
+    <p class="via">${esc(APP_NAME)} ${esc(updater.currentVersion())}</p>`;
+}
 function renderSettings(p) {
+  if (SOLO) return renderSoloSettings(p);
   const n = Object.values(meta).filter(m => m.status === 'found' && !m.broken).length;
   const st = settings.get(), c = cfg();
   p.innerHTML = `<button class="btn small p-close" data-close>Close</button>
