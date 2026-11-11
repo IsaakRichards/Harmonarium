@@ -1139,7 +1139,7 @@ html[data-re-reader] #re-bright { flex: 1; accent-color: var(--r-fg); opacity: 0
 html[data-re-reader] .re-light.folded { background: none; width: auto; left: auto; }
 html[data-re-reader] .re-light.folded #re-light-aa, html[data-re-reader] .re-light.folded #re-bright { display: none; }
 html[data-re-reader] .re-light.folded #re-light-fold svg { transform: rotate(180deg); }
-html[data-re-reader] body.immersive .re-light { transform: translateY(-40px); opacity: 0; pointer-events: none; }
+html[data-re-reader] body.immersive .re-light { transform: translateY(-40px); opacity: 0; pointer-events: none; visibility: hidden; transition: transform 0.2s ease-out, opacity 0.2s, visibility 0s 0.2s; }
 
 /* bottom bar */
 html[data-re-reader] .reader-foot { display: block; padding-top: 2px; box-shadow: none; }
