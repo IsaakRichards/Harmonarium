@@ -127,6 +127,7 @@ export function init(h) {
     $("re-light").classList.toggle("folded", settings.get().lightStrip === false);
   });
   $("re-light-aa").addEventListener("click", () => toggle("aa-panel"));
+  $("toc-more").addEventListener("click", () => moreMenu());
   $("re-bm").addEventListener("click", () => marks.toggleBookmark());
 
   const slider = $("progress-slider");
@@ -281,6 +282,7 @@ export async function open(id) {
 
   $("reader-title").textContent = meta.title;
   $("re-book").textContent = meta.title;
+  $("toc-book").textContent = meta.title;
   $("re-author").textContent = meta.author || "";
   $("re-where").textContent = "";
   $("re-pages").textContent = "";
@@ -326,7 +328,7 @@ export async function open(id) {
 
     // Cached location index → accurate percentages immediately.
     const savedLocations = await db.get("locations", id);
-    if (savedLocations) book.locations.load(savedLocations);
+    if (savedLocations) { book.locations.load(savedLocations); renderToc(); }
 
     await rendition.display(local?.cfi || undefined);
     tuneManager();
@@ -336,6 +338,7 @@ export async function open(id) {
         if (!book) return;
         await db.put("locations", book.locations.save(), id);
         enableSlider();
+        renderToc(); // now with page numbers
         if (current) updateFooter();
       }).catch(() => {});
     } else {
@@ -615,11 +618,24 @@ function chapterFor(where) {
   } catch { return ""; }
 }
 
+/** The page each contents entry starts on: PDFs know it; EPUBs, once the location index exists. */
+function tocPageNo(t) {
+  if (t.page) return t.page;
+  const locs = book?.locations?.length() ? book.locations._locations || [] : [];
+  if (!locs.length || !t.href) return "";
+  const sec = book.spine.get(t.href.split("#")[0]);
+  if (!sec?.cfiBase) return "";
+  const i = locs.findIndex((c) => c.startsWith(`epubcfi(${sec.cfiBase}!`));
+  return i >= 0 ? i + 1 : "";
+}
+
 function renderToc() {
   const list = $("toc-list");
   list.innerHTML = toc.length
-    ? toc.map((t, i) =>
-        `<a href="#" data-i="${i}" style="padding-left:${12 + t.depth * 16}px"><span>${escapeHtml(t.label)}</span>${t.page ? `<small>${t.page}</small>` : ""}</a>`
+    ? toc.map((t, i) => {
+        const n = tocPageNo(t);
+        return `<a href="#" data-i="${i}" style="padding-left:${14 + t.depth * 16}px"><span>${escapeHtml(t.label)}</span>${n ? `<small>${n}</small>` : ""}</a>`;
+      }
       ).join("")
     : `<p class="hint">This book has no table of contents.</p>`;
   for (const a of list.querySelectorAll("a")) {

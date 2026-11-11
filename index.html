@@ -245,8 +245,11 @@
 
     <aside id="toc-drawer" class="toc-drawer hidden">
       <div class="toc-head">
+        <button class="r-btn toc-back" data-dismiss="toc-drawer" aria-label="Back to the book"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z"/></svg></button>
         <h3>Contents</h3>
-        <button class="r-btn" data-dismiss="toc-drawer" aria-label="Close">✕</button>
+        <span class="toc-book" id="toc-book"></span>
+        <button class="r-btn toc-more" id="toc-more" title="More" aria-label="More"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg></button>
+        <button class="r-btn toc-x" data-dismiss="toc-drawer" aria-label="Close">✕</button>
       </div>
       <div class="nav-tabs" role="tablist">
         <button role="tab" data-nav="contents" aria-selected="true">Contents</button>

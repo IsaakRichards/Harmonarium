@@ -1174,3 +1174,49 @@ html[data-re-reader] .jump-back .jb-clear { text-transform: uppercase; letter-sp
 html[data-re-reader] .jump-back [data-dismiss-back] { position: absolute; left: 50%; transform: translateX(-50%); }
 .jump-back .jb-clear { display: none; }
 html[data-re-reader] #re-bm, html[data-re-reader] #re-daynight { display: grid; }
+
+/* ---------- Contents, as ReadEra: a full screen with a teal header and tabs, entries as cards ---------- */
+.toc-back, .toc-book, .toc-more { display: none; }
+html[data-re-reader] .reader { --toc-bg: #eeeeee; --toc-card: #ffffff; --toc-fg: #202124; }
+html[data-re-reader] body[data-rtheme="sepia"] .reader { --toc-bg: #e9dfc6; --toc-card: #f8f0dc; --toc-fg: #4a3b28; }
+html[data-re-reader] body[data-rtheme="dark"] .reader, html[data-re-reader] body[data-rtheme="black"] .reader { --toc-bg: #303030; --toc-card: #434343; --toc-fg: #ffffff; }
+html[data-re-reader] .toc-drawer:not(.find-panel) {
+  inset: 0; width: 100%; max-width: none; z-index: 28; border: 0; box-shadow: none;
+  background: var(--toc-bg); color: var(--toc-fg);
+}
+html[data-re-reader] .toc-drawer:not(.find-panel) .toc-head {
+  display: flex; align-items: center; gap: 4px; min-height: 56px; border: 0;
+  padding: env(safe-area-inset-top, 0px) max(4px, env(safe-area-inset-right, 0px)) 0 max(4px, env(safe-area-inset-left, 0px));
+  background: var(--r-bar); color: var(--r-bar-fg);
+}
+html[data-re-reader] .toc-drawer:not(.find-panel) .toc-head h3, html[data-re-reader] .toc-drawer:not(.find-panel) .toc-x { display: none; }
+html[data-re-reader] .toc-back, html[data-re-reader] .toc-more {
+  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; border: 0; background: none; color: inherit; flex: none;
+}
+html[data-re-reader] .toc-book { display: block; flex: 1; min-width: 0; font: 500 16px var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 12px; }
+html[data-re-reader] .toc-drawer:not(.find-panel) .nav-tabs {
+  background: var(--r-bar); color: var(--r-bar-fg); border: 0;
+  padding: 0 max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
+}
+html[data-re-reader] .toc-drawer:not(.find-panel) .nav-tabs button {
+  flex: 1; opacity: 0.75; color: inherit; text-transform: uppercase; letter-spacing: 0.04em; font: 500 13px var(--body); padding: 12px 6px 11px; border-bottom-width: 2px;
+}
+html[data-re-reader] .toc-drawer:not(.find-panel) .nav-tabs button[aria-selected="true"] { opacity: 1; color: inherit; border-bottom-color: currentColor; }
+html[data-re-reader] .toc-drawer [data-nav="notes"] { display: none; } /* notes show with their quotes */
+html[data-re-reader] #toc-list {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
+}
+html[data-re-reader] #toc-list a {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px;
+  padding-top: 0; padding-bottom: 0; padding-right: 14px; border-radius: 3px;
+  background: var(--toc-card); color: inherit; font: 15px var(--body); text-decoration: none; box-shadow: none;
+}
+html[data-re-reader] #toc-list a span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-re-reader] #toc-list a small { flex: none; opacity: 1; font-size: 15px; }
+html[data-re-reader] #toc-list a:hover { background: color-mix(in srgb, var(--toc-card) 88%, var(--toc-fg)); }
+html[data-re-reader] #toc-list a.current { color: inherit; font-weight: 700; background: var(--toc-card); box-shadow: inset 3px 0 0 var(--re-accent); }
+/* bookmarks and quotes, as cards too */
+html[data-re-reader] .toc-drawer .mark-list { display: flex; flex-direction: column; gap: 4px; padding: 6px max(6px, env(safe-area-inset-right, 0px)) 12px max(6px, env(safe-area-inset-left, 0px)); }
+html[data-re-reader] .toc-drawer .mark-list[hidden] { display: none; }
+html[data-re-reader] .toc-drawer .mark-row { background: var(--toc-card); border: 0; border-radius: 3px; }
