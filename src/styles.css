@@ -1091,9 +1091,6 @@ html[data-readera] .lib-group-cv img:nth-child(3) { left: 22px; top: 7px; }
 html[data-readera] body.in-group .re-fab { display: none; }
 html[data-readera] body:not([data-tab="shelf"]) .re-fab { display: none; }
 
-/* The standalone build (Scriptorium): no lists, sheet or other looks */
-html[data-solo] .hm-only, html[data-solo] .tabs, html[data-solo] .lists-only, html[data-solo] .sync,
-html[data-solo] .lib-list, html[data-solo] .lib-ahead { display: none !important; }
 
 /* ReadEra-style reader in any look: its own numbers and snackbar */
 html[data-re-reader] .reader #foot-page, html[data-re-reader] .reader #foot-percent { font-family: var(--body); }

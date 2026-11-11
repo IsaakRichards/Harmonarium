@@ -36,12 +36,6 @@ Your lists and your place in every book live in a Google Sheet that you own.</p>
 - The reader's top bar carries the bookmark, search and **⋮** (Find, Go to page, bookmark, Favorites, About), and the drawer lists every library section.
 - Everything ReadEra doesn't have (lists, series rings, sheet sync, the jump-there card, keypad and d-pad control) stays, dressed to match.
 
-### Scriptorium: the ReadEra-style reader on its own
-This repo also builds **Scriptorium**, a second app from the same code: only the ReadEra-style library and reader, with no lists, no sheet and no other looks. Its books, bookmarks and quotes stay on the device. It installs beside Harmonarium (its own app id, `com.isaakrichards.scriptorium`, and its own icon, [`app-icon-solo.svg`](app-icon-solo.svg)).
-
-It follows ReadEra's free version and leaves out what ReadEra sells as Premium: cloud sync, one page of every quote from every book, extra highlight colours, page thumbnails, your own fonts and extra library views.
-
-`src/flavor.js` decides which app a build is (`VITE_FLAVOR`, set by `.env` and `.env.solo`). `npm run build:solo` builds Scriptorium's interface; `node scripts/flavor.mjs solo` switches the Tauri project to it before `tauri build` or `tauri android init`.
 
 ### Touch, mouse, keyboard, d-pad or controller
 Everything works without touch: **arrow keys / d-pad** move a gold focus ring, **OK / Enter** presses, **Back / Esc / Backspace** closes the top layer. In a book, ←/→ turn pages, ↑/↓ bring up the toolbars, and OK hides or shows them. Game controllers work too (d-pad or left stick, A = OK, B = Back, LB/RB = page turn). Lists can be reordered with **Move up / Move down** in a book's panel, no dragging needed.
@@ -67,7 +61,6 @@ Each platform has its own build pipeline in GitHub Actions:
 | **Sailfish OS** (`sailfish.yml`) | `harbour-harmonarium` RPMs for `aarch64` and `armv7hl` | every push to `main`, PRs, by hand |
 | **Release** (`release.yml`) | runs all three, then publishes one GitHub release with every file | pushing a `v*` tag, or by hand |
 
-The Linux, Windows and Android workflows each build **both** apps, Harmonarium and Scriptorium (`Scriptorium.apk`, `Scriptorium_…AppImage` and so on), as separate artifacts. Only Harmonarium's files are signed for the in-app updater, so Scriptorium never offers itself as a Harmonarium update.
 
 Builds from a push are under that run's **Artifacts** in the Actions tab. You can run any single platform from **Actions → (workflow) → Run workflow**. To publish a release:
 
@@ -140,8 +133,6 @@ Harmonarium is built with [Tauri 2](https://tauri.app), Vite, plain JavaScript a
 npm install
 npx tauri dev              # desktop window with hot reload
 npx tauri build            # installers for this OS
-npm run dev:solo           # Scriptorium's interface in a browser
-node scripts/flavor.mjs solo && npx tauri build   # Scriptorium installers (don't commit the changed config)
 npm run android:init       # once (needs Android Studio, SDK + NDK, JDK 17)
 npm run android:dev
 ```
@@ -153,7 +144,6 @@ index.html          app shell: header + tabs, Shelf, Lists, reader, shared panel
 src/main.js         boot, tabs, and the wiring between Shelf and Lists
 src/dpad.js         d-pad / keyboard / gamepad navigation (focus ring, reader keys)
 src/native.js       what a native shell offers the page (Sailfish: books on the device)
-src/flavor.js       which app this build is: Harmonarium, or Scriptorium (standalone)
 src/library.js      Shelf: EPUB/PDF import (SHA-256 identity), sections, groups, book menu, collections, trash
 src/reader.js       the reader for both engines: gestures, themes, text settings, progress saving
 src/pdfengine.js    pdf.js: PDF metadata, outline, search, and the scrolling page view

@@ -25,11 +25,7 @@ concurrency:
 
 jobs:
   build:
-    name: Android (APK) · ${{ matrix.flavor == 'solo' && 'Scriptorium' || 'Harmonarium' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        flavor: [harmonarium, solo]
+    name: Android (APK)
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: 27.0.12077973
@@ -41,10 +37,6 @@ jobs:
       - name: Stamp the release version
         if: inputs.version
         run: node scripts/set-version.mjs "${{ inputs.version }}"
-
-      # Harmonarium, or Scriptorium (the standalone ReadEra-style reader). See src/flavor.js.
-      - name: Pick the app
-        run: node scripts/flavor.mjs ${{ matrix.flavor }}
 
       - uses: actions/setup-java@v5
         with:
@@ -78,8 +70,7 @@ jobs:
         run: |
           npx tauri android init --ci
           npx tauri icon app-icon.png
-          # in-app updater (see src-tauri/android/); Harmonarium only
-          if [ "${{ matrix.flavor }}" = "harmonarium" ]; then node scripts/android-overlay.mjs; fi
+          node scripts/android-overlay.mjs   # in-app updater (see src-tauri/android/)
 
       - name: Build APK
         run: npx tauri android build --apk --ci
@@ -90,7 +81,6 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          APP: ${{ matrix.flavor == 'solo' && 'Scriptorium' || 'Harmonarium' }}
         run: |
           set -e
           APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release-unsigned.apk' | head -n 1)
@@ -102,17 +92,17 @@ jobs:
           else
             echo "::warning::No ANDROID_KEYSTORE_B64 secret, so this APK is signed with a throwaway key. Updates from a later build won't install over it. See README."
             keytool -genkeypair -keystore release.jks -alias sb -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass android -keypass android -dname "CN=$APP"
+              -storepass android -keypass android -dname "CN=Harmonarium"
             STOREPASS=android; ALIAS=sb; KEYPASS=android
           fi
           "$BT/zipalign" -p -f 4 "$APK" aligned.apk
           "$BT/apksigner" sign --ks release.jks --ks-key-alias "$ALIAS" --ks-pass "pass:$STOREPASS" --key-pass "pass:$KEYPASS" \
-            --out "$APP.apk" aligned.apk
-          "$BT/apksigner" verify "$APP.apk"
+            --out Harmonarium.apk aligned.apk
+          "$BT/apksigner" verify Harmonarium.apk
           rm -f release.jks aligned.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.flavor == 'solo' && 'Scriptorium' || 'Harmonarium' }}-Android
-          path: ${{ matrix.flavor == 'solo' && 'Scriptorium' || 'Harmonarium' }}.apk
+          name: Harmonarium-Android
+          path: Harmonarium.apk
           if-no-files-found: error

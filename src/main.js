@@ -9,12 +9,10 @@ import { toast } from "./util.js";
 import * as native from "./native.js";
 import * as updater from "./updater.js";
 import * as readera from "./readera.js";
-import { SOLO, APP_NAME } from "./flavor.js";
 
 const TAB_KEY = "hm-tab";
 
 function setTab(tab) {
-  if (SOLO) tab = "shelf"; // Scriptorium has no Lists tab
   document.body.dataset.tab = tab;
   for (const b of document.querySelectorAll(".tabs [data-tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
   try { localStorage.setItem(TAB_KEY, tab); } catch { /* ignore */ }
@@ -89,20 +87,18 @@ async function openBook(id) {
 
 async function boot() {
   await settings.load();
-  if (SOLO) { document.documentElement.setAttribute("data-solo", ""); document.title = APP_NAME; }
 
   library.init({
     open: openBook,
     onShelf: (books, progress) => lists.setShelf(books, progress),
-    listFor: (title) => (SOLO ? null : lists.listFor(title)),
+    listFor: (title) => lists.listFor(title),
     onSection: () => readera.refresh(),
   });
   reader.init({
     close: async () => { showReader(false); dropReaderEntry(); await library.render(); dpad.restoreFocus(); },
     onFinished: (title, id) => {
       library.markRead(id); // "Have read", as ReadEra files a finished book
-      if (SOLO) toast("Finished! Filed under Have read");
-      else lists.offerFinish(title);
+      lists.offerFinish(title);
     },
     onKey: (e) => dpad.handle(e),
   });
@@ -136,7 +132,6 @@ async function boot() {
   setTab(tab === "lists" ? "lists" : "shelf");
 
   await library.render();
-  if (SOLO) return; // no sheet, and its releases are its own
   sync.flushNow(); // push reading positions left over from last time
   library.refreshRemote(false);
   updater.autoCheck(toast, () => lists.openSettings()); // Android: once a day, offers new releases

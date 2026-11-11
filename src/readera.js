@@ -12,8 +12,6 @@
 // index.html applies it before first paint as <html data-readera="light|dark">; the
 // styles live in the "ReadEra look" section at the end of src/styles.css.
 
-import { SOLO, APP_NAME, ICON as APP_ICON } from "./flavor.js";
-
 const KEY = "hm-readera";
 const TONE_KEY = "hm-readera-tone";
 const VIEW_KEY = "hm-re-view";
@@ -29,17 +27,16 @@ const darkQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: 
 function read(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
 function write(key, v) { try { localStorage.setItem(key, v); } catch { /* ignore */ } }
 
-/** Scriptorium (the standalone build) always wears the ReadEra look. */
-export const enabled = () => SOLO || read(KEY, "") === "1";
+export const enabled = () => read(KEY, "") === "1";
 export const tone = () => read(TONE_KEY, "auto");
 /** True while the ReadEra look is showing. */
 export const on = () => !!root.getAttribute("data-readera");
 /** The reader (inside a book) wears ReadEra's style whatever the app's look: on unless turned off. */
-export const readerEnabled = () => SOLO || enabled() || read(READER_KEY, "1") !== "0";
+export const readerEnabled = () => enabled() || read(READER_KEY, "1") !== "0";
 /** True while books open in the ReadEra-style reader. */
 export const readerOn = () => root.hasAttribute("data-re-reader");
 export function setReader(v) { write(READER_KEY, v ? "1" : "0"); apply(); }
-export const view = () => (!SOLO && read(VIEW_KEY, "list") === "grid" ? "grid" : "list");
+export const view = () => (read(VIEW_KEY, "list") === "grid" ? "grid" : "list");
 
 function resolvedTone() {
   const t = tone();
@@ -79,8 +76,6 @@ export function init(h) {
   // An appearance-mode change rewrites the bar colour; keep ReadEra's while it's on.
   window.addEventListener("harmonarium:mode", () => { if (on()) apply(); });
 
-  $("re-drawer-name").textContent = APP_NAME;
-  $("re-drawer-icon").src = APP_ICON;
   // Inside a group (an author, a series, a collection) the ☰ becomes a back arrow.
   $("re-menu").addEventListener("click", () => (document.body.classList.contains("in-group") ? hooks.leaveGroup?.() : openDrawer()));
   $("re-scrim").addEventListener("click", closeDrawer);
@@ -146,7 +141,7 @@ function syncChrome(tab = hooks.getTab()) {
   const sec = hooks.getSection();
   for (const b of document.querySelectorAll("[data-re-sec]")) b.setAttribute("aria-current", String(tab === "shelf" && b.dataset.reSec === sec));
   const grouped = ["authors", "series", "collections"].includes(sec) && !document.body.classList.contains("in-group");
-  v.hidden = tab === "lists" || grouped || SOLO; // list/grid views are a paid extra in ReadEra; the standalone app keeps to the list
+  v.hidden = tab === "lists" || grouped;
   const m = $("re-menu");
   const back = document.body.classList.contains("in-group");
   m.innerHTML = back ? ICON.back : ICON.menu;
@@ -205,7 +200,6 @@ function renderDrawerLists() {
   hooks.counts().then((n) => {
     for (const el of document.querySelectorAll("#re-drawer [data-n]")) el.textContent = n[el.dataset.n] ? String(n[el.dataset.n]) : "";
   }).catch(() => {});
-  if (SOLO) { $("re-drawer-sync").textContent = ""; return; }
   const cols = [...document.querySelectorAll("#board .col:not(.col-new)")];
   const sheet = document.getElementById("sheet-name")?.textContent || "";
   const state = document.querySelector("#sync .sync-t")?.textContent || "";
