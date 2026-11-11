@@ -42,6 +42,13 @@ export function attach(rendition, mode, fadeEl) {
 
   const plain = (dir) => (dir > 0 ? rendition.next() : rendition.prev());
 
+  /** Tell epub.js where the page now is. Our own scrolling isn't always noticed: just after
+   *  epub.js loads a neighbouring chapter it treats the next scroll as its own adjustment and
+   *  stays quiet, which left the page counter (and the saved place) a page or more behind. */
+  function report() {
+    requestAnimationFrame(() => { if (!destroyed) try { rendition.reportLocation(); } catch { /* not ready */ } });
+  }
+
   // ---------------------------------------------------------------- slide
 
   /** Scroll by `px` (positive = forward) with an ease-out curve; chains onto a running slide. */
@@ -78,6 +85,7 @@ export function attach(rendition, mode, fadeEl) {
     if (!c || !m) return;
     const d = m.layout.delta;
     c.scrollLeft = Math.round(c.scrollLeft / d) * d;
+    report();
     if (pending) { const dir = pending; pending = 0; turn(dir); }
   }
 

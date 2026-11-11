@@ -251,6 +251,25 @@ await page.selectOption("#flow", "paginated");
 await page.waitForTimeout(1200);
 await page.click("#re-aa");
 
+// Every turn is counted, and leaving + coming back lands on the very same page.
+await page.evaluate(() => document.body.classList.remove("immersive"));
+const whereNow = () => page.innerText("#re-where");
+let missed = 0;
+for (let i = 0; i < 8; i++) {
+  const before = await whereNow();
+  await page.click("#tap-next", { force: true });
+  await page.waitForTimeout(450);
+  if ((await whereNow()) === before) missed++;
+}
+check("Each page turn moves the page counter", missed === 0, `${missed} of 8 turns not counted · now ${await whereNow()}`);
+const leftAt = await cfi(), leftWhere = await whereNow();
+await page.click("#btn-back");
+await page.waitForTimeout(800);
+await page.click(".lib-open");
+await page.waitForTimeout(2500);
+check("Reopening lands on the same page", (await cfi()) === leftAt && (await whereNow()) === leftWhere, `left ${leftWhere} (${leftAt}) · back at ${await whereNow()} (${await cfi()})`);
+await page.evaluate(() => document.body.classList.remove("immersive"));
+
 // Library sections: the EPUB is under Books, and Favorites starts empty.
 await page.evaluate(() => document.body.classList.remove("immersive"));
 await page.click("#btn-back");

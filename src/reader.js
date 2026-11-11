@@ -163,7 +163,12 @@ export function init(h) {
   // Keys are handled by dpad.js (see api() below).
   // Re-paginate on rotation / window resize.
   window.addEventListener("resize", relayout);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { awake(!!meta); fullScreen(!!meta); } });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") { awake(!!meta); fullScreen(!!meta); return; }
+    // Leaving the app (home button, switching apps): save the exact page now, as Android may close us.
+    if (meta && !holdSaves) { syncLocation(); if (current && current.cfi !== lastSavedCfi) saveProgress(); }
+    sync.flushNow();
+  });
   window.addEventListener("harmonarium:readera", () => fullScreen(!!meta));
   applyBrightness(settings.get()?.brightness ?? 1);
 }
@@ -195,8 +200,22 @@ async function dayNight() {
 function turn(dir) {
   if (pdfView) return pdfView.turn(dir);
   if (!rendition) return;
+  // Whatever the animation, check where we landed once it's done (see syncLocation).
+  clearTimeout(turnCheck);
+  turnCheck = setTimeout(syncLocation, 700);
   if (turner) return turner.turn(dir);
   return dir > 0 ? rendition.next() : rendition.prev();
+}
+
+let turnCheck = 0;
+/** Ask epub.js where the page is right now and take that as the current place, in case a
+ *  turn went unreported. Runs after turns, before leaving the book and when the app is hidden. */
+function syncLocation() {
+  if (pdfView || !rendition || !book) return;
+  try {
+    const loc = rendition.currentLocation();
+    if (loc?.start?.cfi && loc.start.cfi !== current?.cfi) onRelocated(loc);
+  } catch { /* the rendition is busy or gone */ }
 }
 
 let wheelAt = 0;
@@ -839,6 +858,8 @@ function wireGestures(mode) {
 // ---------------------------------------------------------------- close
 
 export async function closeBook() {
+  clearTimeout(turnCheck);
+  syncLocation(); // the page actually on screen, not merely the last one reported
   const moved = current && current.cfi !== lastSavedCfi && (!holdSaves || current.cfi !== initialCfi);
   if (moved) await saveProgress();
   sync.flushNow();
