@@ -253,7 +253,7 @@ await page.click("#re-aa");
 
 // Every turn is counted, and leaving + coming back lands on the very same page.
 await page.evaluate(() => document.body.classList.remove("immersive"));
-const whereNow = () => page.innerText("#re-where");
+const whereNow = () => page.textContent("#re-where"); // works while the bars are hidden
 let missed = 0;
 for (let i = 0; i < 8; i++) {
   const before = await whereNow();
