@@ -114,15 +114,28 @@ export function leaveGroup(fromHistory = false, quiet = false) {
 
 const BOOK_FILE = /\.(epub|pdf)$/i;
 
+/** "epub", "pdf", or null, from the file's first bytes: PDFs start "%PDF", EPUBs are ZIP files ("PK"). */
+function kindOf(buf) {
+  if (!buf || buf.byteLength < 8) return null;
+  const b = new Uint8Array(buf, 0, Math.min(buf.byteLength, 1024));
+  if (pdfengine.isPdf("", "", buf)) return "pdf";
+  // %PDF can come after a little junk at the start
+  for (let i = 0; i < b.length - 4; i++) if (b[i] === 0x25 && b[i + 1] === 0x50 && b[i + 2] === 0x44 && b[i + 3] === 0x46) return "pdf";
+  if (b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04) return "epub"; // a ZIP; epub.js checks the rest
+  return null;
+}
+
 /** Add EPUB and PDF files to the shelf. Returns each file's book id (null if it couldn't be read). */
 export async function importFiles(files, { quiet = false } = {}) {
-  const ok = files.filter((f) => BOOK_FILE.test(f.name) || f.type === "application/epub+zip" || f.type === "application/pdf");
-  if (!ok.length) { toast("Only EPUB and PDF files can be added"); return []; }
-  let added = 0, restored = 0;
+  // Judge each file by what's inside, not its name: Android's file picker often hands over
+  // names without ".epub" (or none at all) and a generic type.
+  let added = 0, restored = 0, refused = 0;
   const ids = [];
-  for (const file of ok) {
+  for (const file of files) {
     try {
       const buf = await file.arrayBuffer();
+      const kind = kindOf(buf);
+      if (!kind) { refused++; ids.push(null); continue; }
       const id = await bookIdFor(buf);
       ids.push(id);
       const have = await db.get("books", id);
@@ -131,7 +144,7 @@ export async function importFiles(files, { quiet = false } = {}) {
         else if (!quiet) toast(`Already on your shelf: ${file.name}`);
         continue;
       }
-      const pdf = pdfengine.isPdf(file.name, file.type, buf);
+      const pdf = kind === "pdf";
       const meta = pdf ? await pdfengine.metadata(buf, file.name) : await readMetadata(buf.slice(0), file.name);
       await db.put("files", buf, id);
       await db.put("books", {
@@ -145,6 +158,8 @@ export async function importFiles(files, { quiet = false } = {}) {
       toast(`Could not read ${file.name}`);
     }
   }
+  if (refused && !added && !restored) toast(refused === 1 ? "That file isn't an EPUB or a PDF" : "Those files aren't EPUBs or PDFs");
+  else if (refused) toast(`${refused} ${refused === 1 ? "file wasn't an EPUB or PDF" : "files weren't EPUBs or PDFs"}; the rest were added`);
   if (added) toast(added === 1 ? "A new book lands on your shelf" : `${added} new books land on your shelf`);
   else if (restored) toast(restored === 1 ? "Brought back from the Trash" : `${restored} books brought back from the Trash`);
   // Only PDFs added while looking at Books (or only EPUBs in Documents): show where they went.
