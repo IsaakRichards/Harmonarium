@@ -14,7 +14,7 @@ import * as sheet from "./sheet.js";
 const THEMES = {
   light: { bg: "#fbfaf7", fg: "#1d1b18", link: "#3b5bdb" },
   sepia: { bg: "#f4ecd8", fg: "#4a3b28", link: "#8a4b14" },
-  dark: { bg: "#23232b", fg: "#d9d6cf", link: "#9db4ff" },
+  dark: { bg: "#000000", fg: "#d9d6cf", link: "#9db4ff" },  // Night: black page, bright text
   black: { bg: "#000000", fg: "#bdbab3", link: "#9db4ff" },
 };
 const MARGIN = { s: 0.55, m: 1, l: 1.7, xl: 2.6 };
