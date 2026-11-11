@@ -42,7 +42,7 @@ const scrolled = () => settings.get().flow === "scrolled";
 
 /** Theme names; the ReadEra look uses ReadEra's own (Day, Sepia, Night, Console). */
 function themeName(t) {
-  const names = readera.on()
+  const names = readera.readerOn()
     ? { light: "Day", sepia: "Sepia", dark: "Night", black: "Console" }
     : { light: "Day", sepia: "Parchment", dark: "Night", black: "Midnight" };
   return names[t] || t;
@@ -257,7 +257,7 @@ export async function open(id) {
 
   $("reader-title").textContent = meta.title;
   // ReadEra opens a book full-screen; a tap in the middle brings the toolbars up.
-  if (readera.on()) document.body.classList.add("immersive");
+  if (readera.readerOn()) document.body.classList.add("immersive");
   tocIndex = -1;
   current = null;
   $("viewer").innerHTML = "";
@@ -278,7 +278,7 @@ export async function open(id) {
       onTap: (zone) => {
         marks.hideSelection();
         if (zone === "middle") toggleBars();
-        else { if (!document.body.classList.contains("immersive") && readera.on()) closeOverlays(); turn(zone === "next" ? 1 : -1); }
+        else { if (!document.body.classList.contains("immersive") && readera.readerOn()) closeOverlays(); turn(zone === "next" ? 1 : -1); }
       },
     });
     loadAnnotations();
@@ -363,7 +363,7 @@ function pageGap() {
   const f = MARGIN[settings.get().margin] || 1;
   return 2 * Math.round(Math.min(48, Math.max(14, w * 0.05)) * f);
 }
-const wantGap = () => (readera.on() || (settings.get().margin && settings.get().margin !== "m") ? pageGap() : undefined);
+const wantGap = () => (readera.readerOn() || (settings.get().margin && settings.get().margin !== "m") ? pageGap() : undefined);
 
 /** Recalculate margins and re-paginate, e.g. after rotating the phone. */
 function relayout() {
@@ -522,7 +522,7 @@ function updateFooter() {
   $("foot-percent").textContent = pct(current?.percent);
   $("progress-slider").value = Math.round((current?.percent || 0) * 1000);
   for (const a of $("toc-list").querySelectorAll("a")) a.classList.toggle("current", Number(a.dataset.i) === tocIndex);
-  if (readera.on()) readera.track(current?.percent, chapterMarks());
+  if (readera.readerOn()) readera.track(current?.percent, chapterMarks());
 }
 
 async function saveProgress() {
@@ -651,7 +651,7 @@ function chapterMarks() {
 /** Alignment and hyphenation: "auto" justifies in the ReadEra look and keeps the publisher's otherwise. */
 function alignCss() {
   const { textAlign = "auto", hyphens = true } = settings.get();
-  const justify = textAlign === "justify" || (textAlign === "auto" && readera.on());
+  const justify = textAlign === "justify" || (textAlign === "auto" && readera.readerOn());
   const rules = [];
   if (justify) rules.push("p { text-align: justify !important; }");
   else if (textAlign === "left") rules.push("p, div, li, blockquote { text-align: left !important; }");
@@ -662,7 +662,7 @@ function alignCss() {
 
 /** ReadEra look: little top and bottom padding. */
 function readeraCss() {
-  if (!readera.on()) return "";
+  if (!readera.readerOn()) return "";
   return "body { padding-top: 12px !important; padding-bottom: 4px !important; }";
 }
 

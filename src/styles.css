@@ -39,15 +39,16 @@
 
 /* ---------- modes (Settings → Appearance), set as <html data-mode="…"> ---------- */
 html[data-mode="dark"] {
-  --void: #111214; --deep: #18191c;
-  --glass: rgba(30, 31, 36, 0.92); --glass-hi: rgba(42, 43, 50, 0.96);
-  --edge: rgba(255, 255, 255, 0.09); --edge-hi: rgba(255, 255, 255, 0.2);
+  /* black as midnight: true black for the page, near-black for raised surfaces (lovely on OLED) */
+  --void: #000000; --deep: #000000;
+  --glass: rgba(14, 14, 16, 0.96); --glass-hi: rgba(24, 24, 28, 0.98);
+  --edge: rgba(255, 255, 255, 0.1); --edge-hi: rgba(255, 255, 255, 0.2);
   --star: #ececf0; --soft: #d4d5db; --dim: #a3a5ad; --faint: #70727b;
   --gold: #f0b44c; --gold-hi: #ffd27f; --gold-ink: #1d1404;
   --nebula: #a78bfa; --cyan: #67b7f7; --danger: #ff7a8a;
   --gold-rgb: 240, 180, 76; --cyan-rgb: 103, 183, 247; --nebula-rgb: 167, 139, 250; --danger-rgb: 255, 122, 138;
-  --well-rgb: 10, 10, 12; --ink-rgb: 255, 255, 255;
-  --panel: #1c1d21; --toast: rgba(40, 41, 48, 0.97);
+  --well-rgb: 0, 0, 0; --ink-rgb: 255, 255, 255;
+  --panel: #0e0e10; --toast: rgba(28, 28, 32, 0.98);
   --backdrop: linear-gradient(transparent, transparent);
   --display: "Figtree", system-ui, sans-serif;
   color-scheme: dark;
@@ -111,7 +112,7 @@ html:not([data-mode="space"]) .tabs button[aria-selected="true"], html:not([data
 .mode-sw.space { background: radial-gradient(circle at 70% 30%, #7e46dc 0, transparent 45%), radial-gradient(circle at 25% 70%, #1e78c8 0, transparent 50%), #070914; }
 .mode-sw.medieval { background: linear-gradient(90deg, transparent 0 14%, #a3321f 14% 18%, transparent 18%), radial-gradient(circle at 70% 50%, #d9a441 0 6px, transparent 7px), #e8d9b5; }
 .mode-sw.light { background: linear-gradient(180deg, #ffffff 0 45%, #e8eaf0 45%); }
-.mode-sw.dark { background: linear-gradient(180deg, #2a2b31 0 45%, #111214 45%); }
+.mode-sw.dark { background: linear-gradient(180deg, #18181b 0 45%, #000000 45%); }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -620,14 +621,14 @@ html[data-readera] {
 }
 html[data-readera="dark"] {
   --re-accent: #7cb1f2; --re-accent-rgb: 124, 177, 242; --re-accent-ink: #0b1a2e;
-  --re-surface: #2a2b2e; --re-bar-bg: #2a2b2e; --re-divider: rgba(255, 255, 255, 0.1); --re-page: #202124;
-  --void: #202124; --deep: #2a2b2e;
-  --glass: #2a2b2e; --glass-hi: #34353a;
+  --re-surface: #0e0e10; --re-bar-bg: #000000; --re-divider: rgba(255, 255, 255, 0.12); --re-page: #000000;
+  --void: #000000; --deep: #000000;
+  --glass: #0e0e10; --glass-hi: #18181b;
   --edge: rgba(255, 255, 255, 0.12); --edge-hi: rgba(255, 255, 255, 0.24);
   --star: #e8eaed; --soft: #d2d4d8; --dim: #9aa0a6; --faint: #6f747a;
   --danger: #f28b82; --danger-rgb: 242, 139, 130;
-  --well-rgb: 32, 33, 36; --ink-rgb: 255, 255, 255;
-  --toast: #3c3d40;
+  --well-rgb: 0, 0, 0; --ink-rgb: 255, 255, 255;
+  --toast: #1c1c20;
   color-scheme: dark;
 }
 html[data-readera] body { font-size: 15px; background: var(--void); }
@@ -810,80 +811,94 @@ html[data-readera] .re-nav-sub button { font-weight: 400; min-height: 44px; padd
 html[data-readera] .re-nav-sub button svg { width: 20px; height: 20px; }
 html[data-readera] .re-nav hr { border: 0; border-top: 1px solid var(--re-divider); margin: 8px 0; }
 
-/* ---------- reader: full page, toolbars float over it ---------- */
-html[data-readera] .reader { --r-bar: #ffffff; --r-bar-fg: #202124; }
-html[data-readera] body[data-rtheme="sepia"] .reader { --r-bar: #f8f0dc; --r-bar-fg: #4a3b28; }
-html[data-readera] body[data-rtheme="dark"] .reader { --r-bar: #2e3040; --r-bar-fg: #e6e3dc; }
-html[data-readera] body[data-rtheme="black"] .reader { --r-bar: #1b1b1b; --r-bar-fg: #d0cdc6; }
-html[data-readera] .reader-bar, html[data-readera] .reader-foot {
+/* ---------- reader: full page, toolbars float over it ----------
+   The ReadEra-style reader (html[data-re-reader]) is on by default in every look, so it brings
+   its own accent and type instead of borrowing the app look's. */
+html[data-re-reader] .reader {
+  --re-accent: #2a7de1; --re-accent-rgb: 42, 125, 225; --re-accent-ink: #ffffff;
+  --body: Roboto, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --gold: var(--re-accent); --gold-rgb: var(--re-accent-rgb);
+  font-family: var(--body);
+}
+html[data-re-reader] body[data-rtheme="dark"] .reader, html[data-re-reader] body[data-rtheme="black"] .reader {
+  --re-accent: #7cb1f2; --re-accent-rgb: 124, 177, 242; --re-accent-ink: #0b1a2e;
+}
+html[data-re-reader] .reader .btn { border-radius: 4px; font-weight: 500; }
+html[data-re-reader] .reader .btn.primary { background: var(--re-accent); color: var(--re-accent-ink); border-color: transparent; }
+html[data-re-reader] .aa-row input[type="range"] { accent-color: var(--re-accent); }
+html[data-re-reader] .reader { --r-bar: #ffffff; --r-bar-fg: #202124; }
+html[data-re-reader] body[data-rtheme="sepia"] .reader { --r-bar: #f8f0dc; --r-bar-fg: #4a3b28; }
+html[data-re-reader] body[data-rtheme="dark"] .reader { --r-bar: #2e3040; --r-bar-fg: #e6e3dc; }
+html[data-re-reader] body[data-rtheme="black"] .reader { --r-bar: #1b1b1b; --r-bar-fg: #d0cdc6; }
+html[data-re-reader] .reader-bar, html[data-re-reader] .reader-foot {
   position: absolute; left: 0; right: 0; z-index: 25; opacity: 1;
   background: var(--r-bar); color: var(--r-bar-fg); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
   transition: transform 0.2s ease-out, opacity 0.2s;
 }
-html[data-readera] .reader-bar { top: 0; min-height: 56px; padding-left: max(4px, env(safe-area-inset-left, 0px)); padding-right: max(4px, env(safe-area-inset-right, 0px)); }
-html[data-readera] .reader-title { font: 500 18px/1.2 var(--body); }
-html[data-readera] .reader-foot {
+html[data-re-reader] .reader-bar { top: 0; min-height: 56px; padding-left: max(4px, env(safe-area-inset-left, 0px)); padding-right: max(4px, env(safe-area-inset-right, 0px)); }
+html[data-re-reader] .reader-title { font: 500 18px/1.2 var(--body); }
+html[data-re-reader] .reader-foot {
   bottom: 0; flex-wrap: wrap; gap: 4px 12px; font-size: 13px;
   padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
 }
-html[data-readera] body.immersive .reader-bar { transform: translateY(-100%); opacity: 0; }
-html[data-readera] body.immersive .reader-foot { transform: translateY(100%); opacity: 0; }
-html[data-readera] #btn-toc, html[data-readera] #btn-aa, html[data-readera] #foot-chapter { display: none; }
-html[data-readera] #progress-slider { accent-color: var(--re-accent); }
-html[data-readera] .re-tools { display: flex; flex-basis: 100%; justify-content: space-around; }
-html[data-readera] .re-tool {
+html[data-re-reader] body.immersive .reader-bar { transform: translateY(-100%); opacity: 0; }
+html[data-re-reader] body.immersive .reader-foot { transform: translateY(100%); opacity: 0; }
+html[data-re-reader] #btn-toc, html[data-re-reader] #btn-aa, html[data-re-reader] #foot-chapter { display: none; }
+html[data-re-reader] #progress-slider { accent-color: var(--re-accent); }
+html[data-re-reader] .re-tools { display: flex; flex-basis: 100%; justify-content: space-around; }
+html[data-re-reader] .re-tool {
   width: auto; height: auto; min-width: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 6px 10px; border-radius: 8px; font-size: 11px;
 }
-html[data-readera] #viewer {
+html[data-re-reader] #viewer {
   /* the page fills the screen; epub.js's gap (reader.js pageGap) gives the slim side margins */
   inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) calc(14px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
 }
-html[data-readera] .tap-zone { width: 30%; }
-html[data-readera] .re-track {
+html[data-re-reader] .tap-zone { width: 30%; }
+html[data-re-reader] .re-track {
   display: block; position: absolute; z-index: 1; pointer-events: none; height: 7px;
   left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px));
   bottom: calc(4px + env(safe-area-inset-bottom, 0px)); color: var(--r-fg); opacity: 0.4;
 }
-html[data-readera] .re-track::before { content: ""; position: absolute; left: 0; right: 0; top: 3px; height: 1px; background: currentColor; opacity: 0.45; }
-html[data-readera] #re-track-fill { position: absolute; left: 0; top: 3px; height: 1px; background: currentColor; }
-html[data-readera] #re-track-marks s, html[data-readera] #re-track-at {
+html[data-re-reader] .re-track::before { content: ""; position: absolute; left: 0; right: 0; top: 3px; height: 1px; background: currentColor; opacity: 0.45; }
+html[data-re-reader] #re-track-fill { position: absolute; left: 0; top: 3px; height: 1px; background: currentColor; }
+html[data-re-reader] #re-track-marks s, html[data-re-reader] #re-track-at {
   position: absolute; top: 1px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: currentColor;
 }
-html[data-readera] #re-track-marks s { opacity: 0.8; }
-html[data-readera] #re-track-at { top: 0; width: 7px; height: 7px; margin-left: -3.5px; }
+html[data-re-reader] #re-track-marks s { opacity: 0.8; }
+html[data-re-reader] #re-track-at { top: 0; width: 7px; height: 7px; margin-left: -3.5px; }
 
 /* text settings: a bottom sheet */
-html[data-readera] .aa-panel {
+html[data-re-reader] .aa-panel {
   top: auto; bottom: 0; left: 0; right: 0; width: 100%; z-index: 30; gap: 14px;
   border: 0; border-radius: 12px 12px 0 0; background: var(--r-bar); color: var(--r-bar-fg);
   padding: 10px max(20px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
   box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.25);
 }
-html[data-readera] .aa-panel::before { content: ""; align-self: center; width: 32px; height: 4px; border-radius: 2px; background: currentColor; opacity: 0.3; }
-html[data-readera] .aa-row > span:first-child { width: 76px; color: inherit; opacity: 0.7; font-size: 13px; letter-spacing: 0; text-transform: none; }
-html[data-readera] .aa-row select { background: transparent; color: inherit; border-radius: 4px; border-color: rgba(128, 128, 128, 0.4); }
-html[data-readera] .aa-row select option { background: var(--r-bar); color: var(--r-bar-fg); }
-html[data-readera] .aa-panel .btn { color: inherit; background: transparent; border-color: rgba(128, 128, 128, 0.4); }
-html[data-readera] .swatch { width: 36px; height: 36px; border-color: rgba(128, 128, 128, 0.45); }
-html[data-readera] body[data-rtheme="light"] .swatch.light, html[data-readera] body[data-rtheme="sepia"] .swatch.sepia,
-html[data-readera] body[data-rtheme="dark"] .swatch.dark, html[data-readera] body[data-rtheme="black"] .swatch.black { border-color: var(--re-accent); box-shadow: 0 0 0 2px var(--re-accent); }
+html[data-re-reader] .aa-panel::before { content: ""; align-self: center; width: 32px; height: 4px; border-radius: 2px; background: currentColor; opacity: 0.3; }
+html[data-re-reader] .aa-row > span:first-child { width: 76px; color: inherit; opacity: 0.7; font-size: 13px; letter-spacing: 0; text-transform: none; }
+html[data-re-reader] .aa-row select { background: transparent; color: inherit; border-radius: 4px; border-color: rgba(128, 128, 128, 0.4); }
+html[data-re-reader] .aa-row select option { background: var(--r-bar); color: var(--r-bar-fg); }
+html[data-re-reader] .aa-panel .btn { color: inherit; background: transparent; border-color: rgba(128, 128, 128, 0.4); }
+html[data-re-reader] .swatch { width: 36px; height: 36px; border-color: rgba(128, 128, 128, 0.45); }
+html[data-re-reader] body[data-rtheme="light"] .swatch.light, html[data-re-reader] body[data-rtheme="sepia"] .swatch.sepia,
+html[data-re-reader] body[data-rtheme="dark"] .swatch.dark, html[data-re-reader] body[data-rtheme="black"] .swatch.black { border-color: var(--re-accent); box-shadow: 0 0 0 2px var(--re-accent); }
 
 /* contents: a plain side sheet */
-html[data-readera] .toc-drawer { width: min(340px, 85vw); border: 0; background: var(--r-bar); color: var(--r-bar-fg); box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3); }
-html[data-readera] .toc-head { border-color: rgba(128, 128, 128, 0.25); min-height: 56px; }
-html[data-readera] .toc-head h3 { font: 500 18px var(--body); letter-spacing: 0; text-transform: none; color: inherit; }
-html[data-readera] #toc-list a { padding-top: 12px; padding-bottom: 12px; font-size: 15px; }
-html[data-readera] #toc-list a:hover { background: rgba(128, 128, 128, 0.12); }
-html[data-readera] #toc-list a.current { color: var(--re-accent); font-weight: 500; background: rgba(var(--re-accent-rgb), 0.12); box-shadow: inset 3px 0 0 var(--re-accent); }
+html[data-re-reader] .toc-drawer { width: min(340px, 85vw); border: 0; background: var(--r-bar); color: var(--r-bar-fg); box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3); }
+html[data-re-reader] .toc-head { border-color: rgba(128, 128, 128, 0.25); min-height: 56px; }
+html[data-re-reader] .toc-head h3 { font: 500 18px var(--body); letter-spacing: 0; text-transform: none; color: inherit; }
+html[data-re-reader] #toc-list a { padding-top: 12px; padding-bottom: 12px; font-size: 15px; }
+html[data-re-reader] #toc-list a:hover { background: rgba(128, 128, 128, 0.12); }
+html[data-re-reader] #toc-list a.current { color: var(--re-accent); font-weight: 500; background: rgba(var(--re-accent-rgb), 0.12); box-shadow: inset 3px 0 0 var(--re-accent); }
 
 /* "jump there?" card */
-html[data-readera] .sync-banner {
+html[data-re-reader] .sync-banner {
   background: var(--r-bar); color: var(--r-bar-fg); border: 0; border-radius: 8px;
   bottom: calc(40px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
 }
-html[data-readera] .sync-banner .muted { color: inherit; opacity: 0.7; }
-html[data-readera] .sync-banner .btn:not(.primary) { color: inherit; background: transparent; }
+html[data-re-reader] .sync-banner .muted { color: inherit; opacity: 0.7; }
+html[data-re-reader] .sync-banner .btn:not(.primary) { color: inherit; background: transparent; }
 
 /* =====================================================================
    Reader tools shared by every look: bookmarks, selection bar, search,
@@ -1046,7 +1061,7 @@ b.lib-head-t { color: var(--star); font-size: 16px; }
 .lib-card.trashed { opacity: 0.7; }
 
 /* ReadEra look tweaks for the new tools */
-html[data-readera] .nav-tabs button[aria-selected="true"] { color: var(--re-accent); border-bottom-color: var(--re-accent); }
+html[data-re-reader] .nav-tabs button[aria-selected="true"] { color: var(--re-accent); border-bottom-color: var(--re-accent); }
 html[data-readera] .sheet { border: 0; background: var(--re-surface); border-radius: 8px; box-shadow: 0 11px 15px rgba(0, 0, 0, 0.2), 0 9px 46px rgba(0, 0, 0, 0.12); }
 @media (max-width: 640px) { html[data-readera] .sheet { border-radius: 12px 12px 0 0; } }
 html[data-readera] .sh-head h3 { font: 500 18px var(--body); }
@@ -1054,13 +1069,13 @@ html[data-readera] .sh-menu button { gap: 28px; font-size: 15px; }
 html[data-readera] .sh-ico { color: var(--dim); }
 html[data-readera] .sh-form input, html[data-readera] .sh-form textarea { border: 0; border-bottom: 2px solid var(--re-accent); border-radius: 0; background: transparent; padding-left: 2px; }
 html[data-readera] .btn.danger { background: transparent; color: var(--danger); box-shadow: none; }
-html[data-readera] .reading-only { display: none; }
-html[data-readera] .reader-bar #btn-bm, html[data-readera] .reader-bar #btn-find, html[data-readera] .reader-bar #btn-more { width: 48px; height: 48px; border-radius: 50%; }
-html[data-readera] .sel-bar { border-radius: 4px; background: var(--r-bar); color: var(--r-bar-fg); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3); }
-html[data-readera] .sel-bar button { text-transform: uppercase; font-size: 13px; letter-spacing: 0.04em; color: var(--re-accent); }
-html[data-readera] .jump-back { background: var(--r-bar); color: var(--r-bar-fg); }
-html[data-readera] .find-form input { border: 0; border-bottom: 2px solid var(--re-accent); border-radius: 0; }
-html[data-readera] .find-panel { right: 0; left: auto; box-shadow: -2px 0 16px rgba(0, 0, 0, 0.3); }
+html[data-re-reader] .reading-only { display: none; }
+html[data-re-reader] .reader-bar #btn-bm, html[data-re-reader] .reader-bar #btn-find, html[data-re-reader] .reader-bar #btn-more { width: 48px; height: 48px; border-radius: 50%; }
+html[data-re-reader] .sel-bar { border-radius: 4px; background: var(--r-bar); color: var(--r-bar-fg); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3); }
+html[data-re-reader] .sel-bar button { text-transform: uppercase; font-size: 13px; letter-spacing: 0.04em; color: var(--re-accent); }
+html[data-re-reader] .jump-back { background: var(--r-bar); color: var(--r-bar-fg); }
+html[data-re-reader] .find-form input { border: 0; border-bottom: 2px solid var(--re-accent); border-radius: 0; }
+html[data-re-reader] .find-panel { right: 0; left: auto; box-shadow: -2px 0 16px rgba(0, 0, 0, 0.3); }
 html[data-readera] #lib-section { display: none; }
 html[data-readera] body[data-tab="shelf"] .lib-head { padding: 10px max(16px, env(safe-area-inset-left, 0px)) 0; margin: 0; }
 html[data-readera] body.in-group .lib-head { display: none; }
@@ -1079,3 +1094,12 @@ html[data-readera] body:not([data-tab="shelf"]) .re-fab { display: none; }
 /* The standalone build (Scriptorium): no lists, sheet or other looks */
 html[data-solo] .hm-only, html[data-solo] .tabs, html[data-solo] .lists-only, html[data-solo] .sync,
 html[data-solo] .lib-list, html[data-solo] .lib-ahead { display: none !important; }
+
+/* ReadEra-style reader in any look: its own numbers and snackbar */
+html[data-re-reader] .reader #foot-page, html[data-re-reader] .reader #foot-percent { font-family: var(--body); }
+html[data-re-reader] body.reading .toast {
+  left: 16px; right: auto; transform: none; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 32px);
+  background: #323232; color: #fff; border: 0; border-radius: 4px; padding: 14px 16px;
+  font: 14px Roboto, "Segoe UI", system-ui, sans-serif; box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.14);
+}
+html[data-re-reader] body.reading .toast button { color: #8ab4f8; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }

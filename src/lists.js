@@ -640,6 +640,7 @@ function renderSettings(p) {
       <option value="auto"${readera.tone() === 'auto' ? ' selected' : ''}>Follow the system (light or dark)</option>
       <option value="light"${readera.tone() === 'light' ? ' selected' : ''}>Light</option>
       <option value="dark"${readera.tone() === 'dark' ? ' selected' : ''}>Dark</option></select></div>
+    <label class="check re-switch"><input id="s-re-reader" type="checkbox" role="switch"${readera.readerEnabled() ? ' checked' : ''}${readera.enabled() ? ' disabled' : ''}> <span><b>ReadEra-style reader</b><br><small>Inside a book: full-screen pages, toolbars on a tap, Contents / Text / Day–Night along the bottom. Works with every look.</small></span></label>
     <div class="modes${readera.enabled() ? ' muted' : ''}" role="group" aria-label="Appearance">${appearance.MODES.map(m => `<button class="mode-btn" data-mode="${m.id}" aria-pressed="${appearance.get() === m.id}"><span class="mode-sw ${m.id}"></span>${m.name}</button>`).join('')}</div>
     <hr class="sep">
     <p class="p-kicker">Controls</p>
@@ -725,10 +726,12 @@ $('#panel').addEventListener('change', async e => {
     else if (e.target.id === 's-readera') {
       readera.setEnabled(e.target.checked);
       $('#s-readera-tone-f').hidden = !e.target.checked;
+      const rr = $('#s-re-reader'); if (rr) { rr.disabled = e.target.checked; rr.checked = readera.readerEnabled(); }
       $('#panel .modes')?.classList.toggle('muted', e.target.checked);
       toast(e.target.checked ? 'ReadEra look on' : 'ReadEra look off');
     }
     else if (e.target.id === 's-readera-tone') readera.setTone(e.target.value);
+    else if (e.target.id === 's-re-reader') readera.setReader(e.target.checked);
     else if (e.target.id === 's-keypad') { await settings.update({ keypadMode: e.target.value }); window.dispatchEvent(new Event('harmonarium:keypad')); }
     return;
   }

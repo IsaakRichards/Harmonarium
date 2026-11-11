@@ -9,7 +9,7 @@ export const MODES = [
   { id: "dark", name: "Dark" },
 ];
 const KEY = "hm-mode";
-const BAR = { space: "#070914", dark: "#111214", light: "#f4f5f8", medieval: "#e8d9b5" };
+const BAR = { space: "#070914", dark: "#000000", light: "#f4f5f8", medieval: "#e8d9b5" };
 
 export function get() {
   const m = document.documentElement.getAttribute("data-mode");

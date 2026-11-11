@@ -17,8 +17,10 @@ import { SOLO, APP_NAME, ICON as APP_ICON } from "./flavor.js";
 const KEY = "hm-readera";
 const TONE_KEY = "hm-readera-tone";
 const VIEW_KEY = "hm-re-view";
-const BAR = { light: "#ffffff", dark: "#202124" };
-const APP_BAR = { space: "#070914", dark: "#111214", light: "#f4f5f8", medieval: "#e8d9b5" };
+const READER_KEY = "hm-re-reader"; // "0" turns the ReadEra-style reader off; it's on by default
+const BLACK = "#000000";
+const BAR = { light: "#ffffff", dark: BLACK };
+const APP_BAR = { space: "#070914", dark: BLACK, light: "#f4f5f8", medieval: "#e8d9b5" };
 
 const root = document.documentElement;
 const $ = (id) => document.getElementById(id);
@@ -32,6 +34,11 @@ export const enabled = () => SOLO || read(KEY, "") === "1";
 export const tone = () => read(TONE_KEY, "auto");
 /** True while the ReadEra look is showing. */
 export const on = () => !!root.getAttribute("data-readera");
+/** The reader (inside a book) wears ReadEra's style whatever the app's look: on unless turned off. */
+export const readerEnabled = () => SOLO || enabled() || read(READER_KEY, "1") !== "0";
+/** True while books open in the ReadEra-style reader. */
+export const readerOn = () => root.hasAttribute("data-re-reader");
+export function setReader(v) { write(READER_KEY, v ? "1" : "0"); apply(); }
 export const view = () => (!SOLO && read(VIEW_KEY, "list") === "grid" ? "grid" : "list");
 
 function resolvedTone() {
@@ -43,6 +50,7 @@ function resolvedTone() {
 /** Put the saved choice on <html> and the browser's bar colour. */
 export function apply() {
   const meta = document.querySelector('meta[name="theme-color"]');
+  if (readerEnabled()) root.setAttribute("data-re-reader", ""); else root.removeAttribute("data-re-reader");
   if (enabled()) {
     const t = resolvedTone();
     root.setAttribute("data-readera", t);

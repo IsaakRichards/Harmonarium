@@ -27,7 +27,7 @@ Your lists and your place in every book live in a Google Sheet that you own.</p>
 - **Series systems:** orbit rings show how much of each series you've read.
 
 ### Four looks
-**Settings → Appearance** switches the whole app between **Medieval** (parchment, ink, gold leaf and Cinzel capitals), **Space** (the drifting starfield), **Light** and **Dark**. Each device remembers its own choice. Books keep their own reading themes (Day, Parchment, Night, Midnight).
+**Settings → Appearance** switches the whole app between **Medieval** (parchment, ink, gold leaf and Cinzel capitals), **Space** (the drifting starfield), **Light** and **Dark** (true black, like the Midnight page). Whatever the look, books open in the **ReadEra-style reader** (full-screen pages, toolbars on a tap, Contents / Text / Day–Night along the bottom); **Settings → Appearance → ReadEra-style reader** turns it off. Each device remembers its own choice. Books keep their own reading themes (Day, Parchment, Night, Midnight).
 
 ### ReadEra look and feel
 **Settings → Appearance → Look and feel like ReadEra** dresses the whole app as the ReadEra reader, for anyone whose hands already know it. Pick its colours (follow the system, light or dark); each device remembers its own choice.
