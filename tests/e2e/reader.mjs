@@ -283,6 +283,11 @@ async function reopen() {
 // A screen that isn't a whole number of pixels wide (most Android phones): pages are fractional.
 await page.evaluate(() => { const v = document.getElementById("viewer"); v.style.right = "auto"; v.style.width = "392.73px"; window.dispatchEvent(new Event("resize")); });
 await page.waitForTimeout(1500);
+// Start from the second chapter, so eight turns don't run off the end of the test book.
+await showBars();
+await page.click("#re-toc");
+await page.click("#toc-list a:nth-child(2)");
+await page.waitForTimeout(1200);
 missed = 0;
 for (let i = 0; i < 8; i++) {
   const before = await whereNow();
@@ -291,6 +296,7 @@ for (let i = 0; i < 8; i++) {
   if ((await whereNow()) === before) missed++;
 }
 check("On a fractional-width screen each turn moves the counter", missed === 0, `${missed} of 8 not counted · now ${await whereNow()}`);
+await page.click("#jump-back [data-dismiss-back]").catch(() => {});
 let at = await cfi(), atWhere = await whereNow();
 await reopen();
 check("…and reopening lands on the same page", (await cfi()) === at && (await whereNow()) === atWhere, `left ${atWhere} · back at ${await whereNow()}`);
