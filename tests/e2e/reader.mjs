@@ -372,10 +372,15 @@ await page.evaluate((id) => new Promise((res, rej) => {
     t.onerror = rej;
   };
 }), bookId);
+// Laid out as ReadEra 26 writes it: meta.json and others beside docs_1.json, a plain list.
 const backup = new JSZip();
-backup.file("library.json", JSON.stringify({ docs: [
-  { data: { doc_sha1: createHash("sha1").update(epubBuf).digest("hex"), doc_position: JSON.stringify({ ratio: 0.5 }), doc_last_read_time: Date.now() - 60000 } },
-] }));
+backup.file("meta.json", JSON.stringify({ date: Date.now(), type: 1, database: 111, appname: "ReadEra" }));
+backup.file("prefs.xml", "<map></map>");
+const sha = createHash("sha1").update(epubBuf).digest("hex");
+backup.file("docs_1.json", JSON.stringify([
+  { uri: `sha-1:${sha}`, data: { doc_sha1: sha, doc_format: "EPUB", doc_position: JSON.stringify({ ratio: 0.5, page: 14, pagesCount: 29, version: 2 }), doc_last_read_time: Date.now() - 60000 }, aliases: [], bookmarks: [], citations: [] },
+  { uri: "sha-1:x", data: { doc_sha1: "ab".repeat(20), doc_format: "EPUB", doc_position: JSON.stringify({ ratio: -1, page: 0, pagesCount: 0 }) }, aliases: [], bookmarks: [], citations: [] },
+]));
 await page.click("#open-settings");
 await page.setInputFiles("#s-readera-import", { name: "ReadEra.bak", mimeType: "application/octet-stream", buffer: await backup.generateAsync({ type: "nodebuffer" }) });
 await page.waitForFunction(() => /place|Couldn't|No books/.test(document.getElementById("s-readera-import-status").textContent), null, { timeout: 15000 });
