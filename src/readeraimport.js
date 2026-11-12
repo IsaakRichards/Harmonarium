@@ -131,6 +131,20 @@ async function apply(book, { ratio, pdfPage, at }) {
     sync.queue(book, entry);
   }
   await db.put("progress", entry);
+  await settle(book.id, { ratio, at });
+}
+
+/** Do what opening the book would: it counts as read when ReadEra last had it open (so it sorts
+ *  among your recent books), and a finished one goes on the Have read shelf. Only for books not
+ *  yet opened in Harmonarium. */
+async function settle(id, { ratio, at }) {
+  const cur = await db.get("books", id);
+  if (cur && !cur.lastOpenedAt) {
+    const patch = {};
+    if (!cur.lastOpenedAt) patch.lastOpenedAt = at;
+    if (ratio >= 0.995 && !cur.status) patch.status = "haveread";
+    if (Object.keys(patch).length) await db.put("books", { ...cur, ...patch });
+  }
 }
 
 /** Books whose place Harmonarium already knows: on this device, or in the synced sheet. */
@@ -166,7 +180,9 @@ export async function importBackup(file) {
   for (const e of entries) {
     const b = bySha.get(e.sha1);
     if (!b) { pending[e.sha1] = { ratio: e.ratio, pdfPage: e.pdfPage, at: e.at }; waiting++; continue; }
-    if (have.has(b.id)) { kept++; continue; }
+    // Already has a place: keep it. (An earlier import's book, never opened since, still gets
+    // sorted among recent reads and, if finished, shelved under Have read.)
+    if (have.has(b.id)) { kept++; await settle(b.id, e); continue; }
     await apply(b, e);
     applied++;
   }
