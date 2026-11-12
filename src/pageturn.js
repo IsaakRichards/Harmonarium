@@ -24,7 +24,7 @@ const now = () => (window.performance ? performance.now() : Date.now());
  * @param mode      "slide" | "fade" | "none"
  * @param fadeEl    element faded in "fade" mode (the viewer)
  */
-export function attach(rendition, mode, fadeEl) {
+export function attach(rendition, mode, fadeEl, { onUserMove = () => {} } = {}) {
   let anim = null;      // running slide: { total, done, base, start, dur, dir }
   let fading = false;
   let drag = null;      // finger drag: { x0, y0, lastX, t0, startLeft, active }
@@ -145,6 +145,7 @@ export function attach(rendition, mode, fadeEl) {
     if (!drag.active) {
       if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
       drag.active = true;
+      onUserMove();
     }
     const c = container();
     const max = c.scrollWidth - c.offsetWidth;
@@ -178,6 +179,33 @@ export function attach(rendition, mode, fadeEl) {
     slideBy(delta, dur);
   }
 
+  /** The touch was taken away (Android's back swipe from the screen's edge does this): put the
+   *  page back where the finger found it instead of leaving it half-turned. */
+  function onCancel() {
+    if (!drag) return;
+    const dr = drag; drag = null;
+    if (!dr.active) return;
+    const c = container(), m = manager();
+    if (!c || !m) return;
+    const d = m.layout.delta;
+    const shift = c.scrollLeft - (dr.startLeft + dr.moved);
+    c.scrollLeft = Math.round(dr.startLeft / d) * d + shift;
+    settle();
+  }
+
+  /** Finish whatever is moving right now: a slide jumps to where it was headed, a drag goes back
+   *  to the page it started on. Used before leaving the book, so the page saved is a whole one. */
+  function finish() {
+    if (drag) { onCancel(); drag = null; }
+    if (anim) {
+      const c = container();
+      if (c) c.scrollLeft = Math.round(anim.base + anim.total);
+      anim = null;
+      pending = 0;
+      settle();
+    }
+  }
+
   rendition.on("touchstart", onStart);
   rendition.on("touchmove", onMove);
   rendition.on("touchend", onEnd);
@@ -187,8 +215,11 @@ export function attach(rendition, mode, fadeEl) {
     turn,
     /** True while a finger drag is in progress (taps/swipes elsewhere should stand aside). */
     dragging: () => !!(drag && drag.active),
+    /** True while the page is sliding or under a finger. */
+    busy: () => !!(anim || (drag && drag.active)),
+    finish,
     /** Feed touches from overlays that sit above the book (the edge tap zones). */
-    touch: { start: onStart, move: onMove, end: onEnd },
+    touch: { start: onStart, move: onMove, end: onEnd, cancel: onCancel },
     destroy() {
       destroyed = true;
       anim = null; drag = null;

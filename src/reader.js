@@ -29,6 +29,15 @@ let current = null;   // { cfi, percent, chapter }
 let lastSavedCfi = null;
 let holdSaves = false; // true while we check the sheet on open
 let initialCfi = null; // where the book first landed, so merely opening never counts as reading
+// The page you're reading, as you reached it. Re-laying the book out (opening it, the phone's bars
+// hiding, rotating, a font or picture loading late, changing the text size) re-flows the pages, and
+// epub.js then reports the start of whichever page now holds your place, which begins a little
+// earlier. Saving that and reopening drifted you back a bit more each time. So until you turn a
+// page yourself, the anchor stays put: it's what gets saved, and the book is kept showing it.
+let anchorCfi = null;
+let anchored = false;  // true while the page shown is the result of a re-layout, not of your turning
+let anchorTimer = 0;
+const cfiCmp = (() => { const c = new ePub.CFI(); return (a, b) => { try { return c.compare(a, b); } catch { return 0; } }; })();
 let pendingRemote = null;
 let hooks = { close: () => {}, onFinished: () => {}, onKey: () => {}, onBookChanged: () => {} };
 let finishOffered = false;
@@ -84,6 +93,7 @@ export function init(h) {
     z.addEventListener("touchstart", (e) => turner?.touch.start(e), { passive: true });
     z.addEventListener("touchmove", (e) => turner?.touch.move(e), { passive: true });
     z.addEventListener("touchend", (e) => turner?.touch.end(e), { passive: true });
+    z.addEventListener("touchcancel", () => turner?.touch.cancel(), { passive: true });
   }
   // Mouse wheel / trackpad on desktop turns pages too.
   $("viewer-wrap").addEventListener("wheel", onWheel, { passive: true });
@@ -135,7 +145,7 @@ export function init(h) {
     finder.noteJump();
     const f = slider.value / 1000;
     if (pdfView) pdfView.goToPercent(f);
-    else if (book?.locations?.length()) rendition.display(book.locations.cfiFromPercentage(f));
+    else if (book?.locations?.length()) display(book.locations.cfiFromPercentage(f));
   });
 
   $("sync-jump").addEventListener("click", () => {
@@ -200,6 +210,7 @@ async function dayNight() {
 function turn(dir) {
   if (pdfView) return pdfView.turn(dir);
   if (!rendition) return;
+  userMoved();
   // Whatever the animation, check where we landed once it's done (see syncLocation).
   clearTimeout(turnCheck);
   turnCheck = setTimeout(syncLocation, 700);
@@ -208,10 +219,30 @@ function turn(dir) {
 }
 
 let turnCheck = 0;
+
+/** You moved (a turn, a drag, a jump): your new page becomes the anchor. */
+function userMoved() { anchored = false; clearTimeout(anchorTimer); }
+
+/** The pages are about to be laid out again: hold on to the page you were reading. */
+function holdAnchor() { if (anchorCfi && !pdfView && !scrolled()) anchored = true; }
+
+/** After a re-layout, make sure the anchored page is still the one on screen; if not, go back to it. */
+function checkAnchor(delay = 60) {
+  clearTimeout(anchorTimer);
+  anchorTimer = setTimeout(() => {
+    if (!anchored || !anchorCfi || !rendition || pdfView || turner?.busy()) return;
+    try {
+      const loc = rendition.currentLocation();
+      const s = loc?.start?.cfi, e = loc?.end?.cfi;
+      if (!s || !e) return;
+      if (cfiCmp(anchorCfi, s) < 0 || cfiCmp(anchorCfi, e) > 0) rendition.display(anchorCfi);
+    } catch { /* busy; the next layout check will try again */ }
+  }, delay);
+}
 /** Ask epub.js where the page is right now and take that as the current place, in case a
  *  turn went unreported. Runs after turns, before leaving the book and when the app is hidden. */
 function syncLocation() {
-  if (pdfView || !rendition || !book) return;
+  if (pdfView || !rendition || !book || turner?.busy()) return;
   try {
     const loc = rendition.currentLocation();
     if (loc?.start?.cfi && loc.start.cfi !== current?.cfi) onRelocated(loc);
@@ -349,6 +380,8 @@ export async function open(id) {
     const savedLocations = await db.get("locations", id);
     if (savedLocations) { book.locations.load(savedLocations); renderToc(); }
 
+    anchorCfi = local?.cfi || null;
+    anchored = !!anchorCfi && !scrolled();
     await rendition.display(local?.cfi || undefined);
     tuneManager();
 
@@ -393,8 +426,8 @@ function loadAnnotations() {
     },
     pages: () => (pdfView ? pdfView.pages : book?.locations?.length() || 0),
     pageNow: () => (pdfView ? pdfView.position().page : current && book?.locations?.length() ? book.locations.locationFromCfi(current.cfi) + 1 : 0),
-    goToPage: (n) => (pdfView ? pdfView.goTo(n) : rendition.display(book.locations.cfiFromLocation(n - 1))),
-    goToPercent: (f) => (pdfView ? pdfView.goToPercent(f) : book?.locations?.length() ? rendition.display(book.locations.cfiFromPercentage(f)) : rendition.display(book.spine.get(Math.floor(f * (book.spine.length - 1)))?.href)),
+    goToPage: (n) => (pdfView ? pdfView.goTo(n) : display(book.locations.cfiFromLocation(n - 1))),
+    goToPercent: (f) => (pdfView ? pdfView.goToPercent(f) : book?.locations?.length() ? display(book.locations.cfiFromPercentage(f)) : display(book.spine.get(Math.floor(f * (book.spine.length - 1)))?.href)),
   };
   marks.load(ctx);
   finder.load(ctx);
@@ -403,6 +436,7 @@ function loadAnnotations() {
 /** Go to a stored position (an EPUB CFI or href, or a PDF "pdf:…" position). */
 function display(at) {
   if (!at) return;
+  userMoved();
   if (pdfView) return pdfView.display(at);
   return rendition?.display(at);
 }
@@ -428,7 +462,9 @@ function relayout() {
   const gap = wantGap();
   rendition.settings.gap = gap;
   if (rendition.manager?.settings) rendition.manager.settings.gap = gap;
-  rendition.resize();
+  holdAnchor();
+  rendition.resize(undefined, undefined, anchorCfi || undefined);
+  checkAnchor(400);
 }
 
 /** Create the rendition for the current page-turn mode (slide needs epub.js's continuous manager). */
@@ -460,11 +496,17 @@ function makeRendition() {
     guardLinks(contents);
     contents.document.addEventListener("wheel", onWheel, { passive: true });
     contents.document.addEventListener("selectionchange", () => marks.onSelectionChange(contents.document));
+    // Android's back swipe takes the touch away mid-drag: put the page back.
+    contents.document.addEventListener("touchcancel", () => turner?.touch.cancel(), { passive: true });
+    // Fonts and pictures that arrive late re-flow the chapter: keep the anchored page on screen.
+    contents.document.fonts?.ready?.then(() => checkAnchor(80)).catch(() => {});
+    for (const img of contents.document.images || []) if (!img.complete) img.addEventListener("load", () => checkAnchor(120), { once: true });
+    contents.on?.("resize", () => checkAnchor(120));
   });
   wireGestures(mode);
   rendition.on("relocated", onRelocated);
   rendition.on("selected", (cfiRange, contents) => marks.onSelected(cfiRange, contents));
-  turner = pageturn.attach(rendition, mode, $("viewer"));
+  turner = pageturn.attach(rendition, mode, $("viewer"), { onUserMove: userMoved });
 }
 
 /** Slide mode: load the next chapter a couple of pages early so sliding into it stays smooth. */
@@ -476,7 +518,8 @@ function tuneManager() {
 /** Switch page-turn mode or flow on an open book, keeping the reader's place. */
 async function rebuild() {
   if (!book) return;
-  const cfi = current?.cfi;
+  const cfi = anchorCfi || current?.cfi;
+  holdAnchor();
   turner?.destroy(); turner = null;
   try { rendition.destroy(); } catch { /* ignore */ }
   $("viewer").innerHTML = "";
@@ -544,11 +587,28 @@ function onRelocated(loc) {
   else percent = book.spine.length ? loc.start.index / book.spine.length : 0;
   const hit = tocEntryFor(loc.start.href);
   tocIndex = hit ? toc.indexOf(hit) : -1;
-  // Pages within this chapter (its spine file), as epub.js lays them out on screen.
-  const d = loc.start.displayed || {};
-  chapterPages = d.total > 0 && !scrolled() ? { page: Math.min(d.page, d.total), total: d.total } : null;
+  chapterPages = chapterPage(loc);
   moved(cfi, percent, hit?.label || "", loc.atEnd || (book.locations.length() && percent >= 0.995));
   marks.onRelocated(loc);
+  if (anchored) checkAnchor();
+}
+
+/** Pages within this chapter (its spine file). epub.js rounds the page down, and on phones whose
+ *  screens aren't a whole number of pixels wide a settled page sits a hair short of its edge, so
+ *  the count could repeat; work it out from where the page actually is instead. */
+function chapterPage(loc) {
+  const d = loc.start.displayed || {};
+  if (!(d.total > 0) || scrolled()) return null;
+  try {
+    const m = rendition.manager;
+    const view = m.views.all().find((v) => v.section?.index === loc.start.index);
+    const pw = m.layout?.pageWidth;
+    if (view && pw > 0) {
+      const into = m.container.getBoundingClientRect().left - view.position().left;
+      return { page: Math.min(d.total, Math.max(1, Math.round(into / pw) + 1)), total: d.total };
+    }
+  } catch { /* fall back to epub.js's count */ }
+  return { page: Math.min(d.page, d.total), total: d.total };
 }
 
 function onPdfMove({ page, frac, percent, atEnd }) {
@@ -565,6 +625,9 @@ function onPdfMove({ page, frac, percent, atEnd }) {
 
 /** Shared by both engines: the reader is now at `cfi`. */
 function moved(cfi, percent, chapter, atEnd) {
+  // A re-layout doesn't move your place: keep the anchor as the place to save (it's on screen).
+  if (anchored && anchorCfi && !pdfView) cfi = anchorCfi;
+  else anchorCfi = cfi;
   current = { cfi, percent, chapter };
   $("viewer").dataset.cfi = cfi; // where the reader is (handy for tests and debugging)
   if (holdSaves && initialCfi === null) initialCfi = cfi;
@@ -673,7 +736,9 @@ async function setFontSize(v) {
   const size = Math.min(250, Math.max(60, v));
   await settings.update({ fontSize: size });
   $("font-size-label").textContent = `${size}%`;
+  holdAnchor();
   rendition?.themes.fontSize(`${size}%`);
+  checkAnchor(300);
 }
 
 function setZoom(z) {
@@ -773,6 +838,7 @@ function guardLinks(contents) {
       toast("Links to websites are turned off in books");
     } else if (a) {
       finder.noteJump(); // a footnote or cross-reference: leave a way back
+      userMoved();
     }
   }, true);
 }
@@ -796,6 +862,8 @@ function injectUserStyle(contents) {
 
 function applyUserStyle() {
   if (!rendition) return;
+  holdAnchor();
+  checkAnchor(300);
   for (const c of rendition.getContents()) injectUserStyle(c);
 }
 
@@ -859,6 +927,8 @@ function wireGestures(mode) {
 
 export async function closeBook() {
   clearTimeout(turnCheck);
+  clearTimeout(anchorTimer);
+  turner?.finish(); // land a sliding page, or put back a half-dragged one (the back swipe)
   syncLocation(); // the page actually on screen, not merely the last one reported
   const moved = current && current.cfi !== lastSavedCfi && (!holdSaves || current.cfi !== initialCfi);
   if (moved) await saveProgress();
@@ -872,6 +942,7 @@ export async function closeBook() {
   try { pdfView?.destroy(); } catch { /* ignore */ }
   pdfengine.close(pdfDoc);
   book = rendition = meta = current = pdfDoc = pdfView = null;
+  anchorCfi = null; anchored = false;
   awake(false);
   chapterPages = null;
   fullScreen(false);

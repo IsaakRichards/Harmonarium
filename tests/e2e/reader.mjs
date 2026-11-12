@@ -254,7 +254,7 @@ await page.click("#re-aa");
 // Every turn is counted, and leaving + coming back lands on the very same page.
 await page.evaluate(() => document.body.classList.remove("immersive"));
 const whereNow = () => page.textContent("#re-where"); // works while the bars are hidden
-let missed = 0;
+let missed = 0; // reused below
 for (let i = 0; i < 8; i++) {
   const before = await whereNow();
   await page.click("#tap-next", { force: true });
@@ -269,6 +269,57 @@ await page.click(".lib-open");
 await page.waitForTimeout(2500);
 check("Reopening lands on the same page", (await cfi()) === leftAt && (await whereNow()) === leftWhere, `left ${leftWhere} (${leftAt}) · back at ${await whereNow()} (${await cfi()})`);
 await page.evaluate(() => document.body.classList.remove("immersive"));
+
+// ---- Phone conditions -------------------------------------------------------------------
+const showBars = () => page.evaluate(() => document.body.classList.remove("immersive"));
+async function reopen() {
+  await showBars();
+  await page.click("#btn-back");
+  await page.waitForTimeout(800);
+  await page.click(".lib-open");
+  await page.waitForTimeout(2500);
+}
+
+// A screen that isn't a whole number of pixels wide (most Android phones): pages are fractional.
+await page.evaluate(() => { const v = document.getElementById("viewer"); v.style.right = "auto"; v.style.width = "392.73px"; window.dispatchEvent(new Event("resize")); });
+await page.waitForTimeout(1500);
+missed = 0;
+for (let i = 0; i < 8; i++) {
+  const before = await whereNow();
+  await page.click("#tap-next", { force: true });
+  await page.waitForTimeout(450);
+  if ((await whereNow()) === before) missed++;
+}
+check("On a fractional-width screen each turn moves the counter", missed === 0, `${missed} of 8 not counted · now ${await whereNow()}`);
+let at = await cfi(), atWhere = await whereNow();
+await reopen();
+check("…and reopening lands on the same page", (await cfi()) === at && (await whereNow()) === atWhere, `left ${atWhere} · back at ${await whereNow()}`);
+
+// Android's back gesture: a swipe from the left edge starts dragging the page, then the system
+// takes the touch away (touchcancel) and closes the book.
+for (let i = 0; i < 3; i++) { await page.click("#tap-next", { force: true }); await page.waitForTimeout(450); }
+at = await cfi(); atWhere = await whereNow();
+await page.evaluate(async () => {
+  const el = document.getElementById("tap-prev");
+  const mk = (x) => new Touch({ identifier: 7, target: el, clientX: x, clientY: 400, screenX: x, screenY: 400, pageX: x, pageY: 400 });
+  const fire = (type, x) => el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === "touchcancel" ? [] : [mk(x)], changedTouches: [mk(x)] }));
+  fire("touchstart", 4);
+  for (const x of [20, 45, 80, 120]) { fire("touchmove", x); await new Promise((r) => setTimeout(r, 16)); }
+  fire("touchcancel", 120);
+});
+await page.waitForTimeout(200);
+await reopen();
+check("A back swipe from the edge doesn't lose a page", (await cfi()) === at && (await whereNow()) === atWhere, `left ${atWhere} · back at ${await whereNow()}`);
+
+// The status bar hiding and showing (the screen grows and shrinks) re-flows the pages.
+await page.evaluate(() => { const v = document.getElementById("viewer"); v.style.right = ""; v.style.width = ""; window.dispatchEvent(new Event("resize")); });
+await page.waitForTimeout(1200);
+for (let i = 0; i < 2; i++) { await page.click("#tap-next", { force: true }); await page.waitForTimeout(450); }
+at = await cfi(); atWhere = await whereNow();
+for (const h of [900, 860, 900, 860]) { await page.setViewportSize({ width: 412, height: h }); await page.waitForTimeout(700); }
+await reopen();
+check("Screen re-sizes don't drift the saved place", (await cfi()) === at, `left ${atWhere} (${at}) · back at ${await whereNow()} (${await cfi()})`);
+await showBars();
 
 // Library sections: the EPUB is under Books, and Favorites starts empty.
 await page.evaluate(() => document.body.classList.remove("immersive"));
