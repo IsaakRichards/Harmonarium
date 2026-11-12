@@ -394,6 +394,9 @@ export async function open(id) {
           renderToc();
         }
         startAt = book.locations.cfiFromPercentage(local.fromReadEra);
+        // The page index gives a span of text; keep its first spot, like every other saved place.
+        const c = new ePub.CFI(startAt);
+        if (c.range) { c.collapse(true); startAt = c.toString(); }
         const entry = { ...local, cfi: startAt };
         delete entry.fromReadEra;
         await db.put("progress", entry);
