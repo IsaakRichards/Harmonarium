@@ -325,6 +325,26 @@ await reopen();
 check("Screen re-sizes don't drift the saved place", (await cfi()) === at, `left ${atWhere} (${at}) · back at ${await whereNow()} (${await cfi()})`);
 await showBars();
 
+// Text size: bigger letters re-flow the chapter (more pages), but the place you were reading
+// stays on screen and stays the saved place; going back to the old size shows the same page.
+for (let i = 0; i < 2; i++) { await page.click("#tap-next", { force: true }); await page.waitForTimeout(450); }
+// Step back from any chapter's first page, so the place is mid-chapter.
+await page.click("#tap-prev", { force: true }); await page.waitForTimeout(450);
+at = await cfi(); atWhere = await whereNow();
+await showBars();
+await page.click("#re-aa");
+await page.click("#font-inc"); await page.waitForTimeout(900);
+await page.click("#font-inc"); await page.waitForTimeout(900);
+const bigWhere = await whereNow(), bigCfi = await cfi();
+await page.click("#font-dec"); await page.waitForTimeout(900);
+await page.click("#font-dec"); await page.waitForTimeout(900);
+await page.click("#re-aa");
+check("Bigger text keeps your place as the saved place", bigCfi === at, `${atWhere} → ${bigWhere} (${bigCfi})`);
+check("…and the old size shows the same page again", (await whereNow()) === atWhere && (await cfi()) === at, `${atWhere} → ${await whereNow()}`);
+await reopen();
+check("…and reopening after a size change lands on it", (await cfi()) === at && (await whereNow()) === atWhere, `${atWhere} → ${await whereNow()}`);
+await showBars();
+
 // Library sections: the EPUB is under Books, and Favorites starts empty.
 await page.evaluate(() => document.body.classList.remove("immersive"));
 await page.click("#btn-back");

@@ -149,7 +149,7 @@ export function init(h) {
   });
 
   $("sync-jump").addEventListener("click", () => {
-    if (pendingRemote) display(pendingRemote.cfi);
+    if (pendingRemote) goToPlace(pendingRemote.cfi);
     hideBanner();
   });
   $("sync-stay").addEventListener("click", async () => {
@@ -441,6 +441,18 @@ function display(at) {
   return rendition?.display(at);
 }
 
+/** Go to a reading place from another device. Its screen or text size may differ, so the page
+ *  here that holds that place starts a little earlier; saving that start would send this device's
+ *  earlier place back, and the two would walk each other backwards. So the exact place is kept as
+ *  the anchor (saved and synced unchanged) until you turn a page here. */
+function goToPlace(at) {
+  if (!at) return;
+  if (pdfView) return pdfView.display(at);
+  anchorCfi = at;
+  anchored = !scrolled();
+  return rendition?.display(at);
+}
+
 function toggleBars() {
   document.body.classList.toggle("immersive");
   $("toc-drawer").classList.add("hidden");
@@ -550,7 +562,7 @@ async function checkRemote(local) {
     if (dismissed && Number(dismissed) >= Number(remote.updated_at)) return;
 
     if (settings.get().autoJump) {
-      await display(remote.cfi);
+      await goToPlace(remote.cfi);
       toast(`Resumed from ${remote.device_name} · ${pct(remote.percent)}`);
     } else {
       showBanner(remote);
