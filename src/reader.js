@@ -227,15 +227,17 @@ function userMoved() { anchored = false; clearTimeout(anchorTimer); }
 function holdAnchor() { if (anchorCfi && !pdfView && !scrolled()) anchored = true; }
 
 /** After a re-layout, make sure the anchored page is still the one on screen; if not, go back to it. */
-function checkAnchor(delay = 60) {
+function checkAnchor(delay = 60, recount = true) {
   clearTimeout(anchorTimer);
   anchorTimer = setTimeout(() => {
-    if (!anchored || !anchorCfi || !rendition || pdfView || turner?.busy()) return;
+    if (!anchorCfi || !rendition || pdfView || turner?.busy()) return;
     try {
       const loc = rendition.currentLocation();
       const s = loc?.start?.cfi, e = loc?.end?.cfi;
       if (!s || !e) return;
-      if (cfiCmp(anchorCfi, s) < 0 || cfiCmp(anchorCfi, e) > 0) rendition.display(anchorCfi);
+      if (anchored && (cfiCmp(anchorCfi, s) < 0 || cfiCmp(anchorCfi, e) > 0)) rendition.display(anchorCfi);
+      // Still on the right page, but the chapter may now have more or fewer pages: recount.
+      else if (recount) onRelocated(loc);
     } catch { /* busy; the next layout check will try again */ }
   }, delay);
 }
@@ -602,7 +604,7 @@ function onRelocated(loc) {
   chapterPages = chapterPage(loc);
   moved(cfi, percent, hit?.label || "", loc.atEnd || (book.locations.length() && percent >= 0.995));
   marks.onRelocated(loc);
-  if (anchored) checkAnchor();
+  if (anchored) checkAnchor(60, false); // (no recount from here, or it would never stop)
 }
 
 /** Pages within this chapter (its spine file). epub.js rounds the page down, and on phones whose
