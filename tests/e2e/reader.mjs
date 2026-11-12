@@ -283,11 +283,9 @@ async function reopen() {
 // A screen that isn't a whole number of pixels wide (most Android phones): pages are fractional.
 await page.evaluate(() => { const v = document.getElementById("viewer"); v.style.right = "auto"; v.style.width = "392.73px"; window.dispatchEvent(new Event("resize")); });
 await page.waitForTimeout(1500);
-// Start from the second chapter, so eight turns don't run off the end of the test book.
-await showBars();
-await page.click("#re-toc");
-await page.click("#toc-list a:nth-child(2)");
-await page.waitForTimeout(1200);
+// Start a quarter of the way in, so eight turns don't run off the end of the test book.
+await page.evaluate(() => { const sl = document.getElementById("progress-slider"); sl.disabled = false; sl.value = "250"; sl.dispatchEvent(new Event("change")); });
+await page.waitForTimeout(1500);
 missed = 0;
 for (let i = 0; i < 8; i++) {
   const before = await whereNow();
