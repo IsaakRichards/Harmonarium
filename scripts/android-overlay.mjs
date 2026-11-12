@@ -20,6 +20,7 @@ if (!fs.existsSync(pkgDir)) fail(`${pkgDir} not found; run \`tauri android init\
 
 fs.copyFileSync(path.join(src, "HarmonariumUpdater.kt"), path.join(pkgDir, "HarmonariumUpdater.kt"));
 fs.copyFileSync(path.join(src, "HarmonariumScreen.kt"), path.join(pkgDir, "HarmonariumScreen.kt"));
+fs.copyFileSync(path.join(src, "HarmonariumFolder.kt"), path.join(pkgDir, "HarmonariumFolder.kt"));
 fs.copyFileSync(path.join(src, "harmonarium-updater.pro"), path.join(app, "harmonarium-updater.pro"));
 
 // MainActivity: hook the webview as it is created, before the page loads.
@@ -30,10 +31,20 @@ if (!main.includes("HarmonariumUpdater(")) {
   if (end < 0) fail("unexpected MainActivity.kt");
   main = main.slice(0, end).trimEnd() + `
 
+  private var harmonariumFolder: HarmonariumFolder? = null
+
   override fun onWebViewCreate(webView: android.webkit.WebView) {
     super.onWebViewCreate(webView)
     webView.addJavascriptInterface(HarmonariumUpdater(this, webView), "HarmonariumUpdater")
     webView.addJavascriptInterface(HarmonariumScreen(this), "HarmonariumScreen")
+    harmonariumFolder = HarmonariumFolder(this, webView).also { webView.addJavascriptInterface(it, "HarmonariumFolder") }
+  }
+
+  @Deprecated("Activity results still arrive here for startActivityForResult")
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+    @Suppress("DEPRECATION")
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode == HarmonariumFolder.REQUEST) harmonariumFolder?.onResult(resultCode, data)
   }
 }
 `;
@@ -60,4 +71,4 @@ if (fs.existsSync(paths) && !fs.readFileSync(paths, "utf8").includes("<cache-pat
   fail("file_paths.xml has no cache-path; the updater downloads into the cache folder");
 }
 
-console.log("android-overlay: updater and full-screen reading added");
+console.log("android-overlay: updater, full-screen reading and folder adding added");

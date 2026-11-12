@@ -10,7 +10,7 @@ Your lists and your place in every book live in a Google Sheet that you own.</p>
 ## What it does
 
 ### Shelf: read your EPUBs and PDFs
-- **Library** of the EPUBs and PDFs on this device, with covers, progress bars, search and sort. Add files with **+ Add books**, or drop them on the window on desktop.
+- **Library** of the EPUBs and PDFs on this device, with covers, progress bars, search and sort. Add files with **+ Add books**, or drop them on the window on desktop. **Add a whole folder** (also under **+ Add books**, on Android, Windows, Linux and in browsers) finds every EPUB and PDF in a folder and its subfolders, counts them by format, and adds the formats you tick (EPUB by default), skipping books already on the shelf. Sailfish lists the books in your usual folders, with **Add all**.
 - **Sections, as in ReadEra:** Books (EPUB), Documents (PDF), Favorites, To read, Have read, Authors, Series (read from Calibre and EPUB 3 metadata), your own Collections, and a Trash you can restore from. Each book's **⋮** menu holds About, Favorites, To read / Have read, Collections and Move to trash. Finishing a book files it under Have read.
 - **PDFs** scroll as one column of pages fitted to the width. Tap the edges to move a screen, pinch or use **Zoom**, and the Night and Sepia themes tint the pages too. The document's outline becomes its Contents.
 - **ReadEra-style reader.** Pages turn by tapping the edges, swiping, or with the arrow keys. Wide screens show two pages side by side, and a tap in the middle hides the bars. It has a table of contents and a progress slider.

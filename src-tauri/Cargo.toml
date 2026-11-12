@@ -24,3 +24,5 @@ serde_json = "1"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-opener = "2"
+# Adding a whole folder of books: the system's folder chooser (src/lib.rs, pick_book_folder).
+tauri-plugin-dialog = "2"

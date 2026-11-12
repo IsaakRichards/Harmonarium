@@ -53,6 +53,13 @@ export function init(h) {
   });
 
   if (native.canBrowseDevice) initDeviceBooks();
+  else if (native.folderPicker()) {
+    document.querySelector(".add-btn")?.addEventListener("click", (e) => {
+      if (e.target.id === "file-input") return; // the menu's "Choose files…" clicking through
+      e.preventDefault();
+      openAddBooks();
+    });
+  }
 
   $("lib-search").addEventListener("input", render);
   const sort = $("lib-sort");
@@ -128,7 +135,8 @@ function kindOf(buf) {
 }
 
 /** Add EPUB and PDF files to the shelf. Returns each file's book id (null if it couldn't be read). */
-export async function importFiles(files, { quiet = false } = {}) {
+export async function importFiles(files, { quiet = false, silent = false, stats = null } = {}) {
+  // silent: no messages and no redraw (adding a folder book by book does its own)
   // Judge each file by what's inside, not its name: Android's file picker often hands over
   // names without ".epub" (or none at all) and a generic type.
   let added = 0, restored = 0, refused = 0, fromReadEra = 0;
@@ -143,7 +151,10 @@ export async function importFiles(files, { quiet = false } = {}) {
       const have = await db.get("books", id);
       if (have) {
         if (have.trashedAt) { await db.put("books", { ...have, trashedAt: 0 }); restored++; }
-        else if (!quiet) toast(`Already on your shelf: ${file.name}`);
+        else {
+          if (stats) stats.had++;
+          if (!quiet && !silent) toast(`Already on your shelf: ${file.name}`);
+        }
         continue;
       }
       const pdf = kind === "pdf";
@@ -160,9 +171,12 @@ export async function importFiles(files, { quiet = false } = {}) {
     } catch (err) {
       console.error(err);
       ids.push(null);
-      toast(`Could not read ${file.name}`);
+      if (stats) stats.failed++;
+      if (!silent) toast(`Could not read ${file.name}`);
     }
   }
+  if (stats) { stats.added += added; stats.restored += restored; stats.refused += refused; stats.fromReadEra += fromReadEra; }
+  if (silent) return ids;
   if (refused && !added && !restored) toast(refused === 1 ? "That file isn't an EPUB or a PDF" : "Those files aren't EPUBs or PDFs");
   else if (refused) toast(`${refused} ${refused === 1 ? "file wasn't an EPUB or PDF" : "files weren't EPUBs or PDFs"}; the rest were added`);
   if (added) toast((added === 1 ? "A new book lands on your shelf" : `${added} new books land on your shelf`)
@@ -181,10 +195,73 @@ export async function importFiles(files, { quiet = false } = {}) {
   return ids;
 }
 
-/** "+ Add books": the device list on Sailfish, otherwise the file picker. */
-export function openAddBooks() {
-  if (native.canBrowseDevice) openDeviceBooks();
-  else $("file-input").click();
+/** "+ Add books": the device list on Sailfish; elsewhere files, or a whole folder. */
+export async function openAddBooks() {
+  if (native.canBrowseDevice) return openDeviceBooks();
+  if (!native.folderPicker()) return $("file-input").click();
+  const v = await sheet.menu({ title: "Add books", items: [
+    { label: "Choose files…", value: "files", icon: "📄" },
+    { label: "Add a whole folder…", value: "folder", icon: "📁", hint: "Every EPUB (or PDF) in it and its subfolders" },
+  ] });
+  if (v === "files") $("file-input").click();
+  else if (v === "folder") addFolder();
+}
+
+// ---------------------------------------------------------------- adding a whole folder
+
+const FORMATS = { epub: "EPUB", pdf: "PDF" };
+const fmtOf = (name) => (/\.pdf$/i.test(name) ? "pdf" : "epub");
+
+/** Choose a folder, pick which formats to take (EPUB by default), and add them all. */
+export async function addFolder() {
+  let found;
+  try { found = await native.pickBookFolder(); }
+  catch (err) { toast(`Couldn't open that folder: ${err.message}`); return; }
+  if (!found) return;
+  const books = found.books || [];
+  if (!books.length) { toast(`No EPUB or PDF files in ${found.folder || "that folder"}`); return; }
+  const count = (f) => books.filter((b) => fmtOf(b.name) === f).length;
+  const kinds = Object.keys(FORMATS).filter((f) => count(f));
+  const subfolders = new Set(books.map((b) => b.folder).filter(Boolean)).size;
+  const pick = await sheet.card({
+    title: "Add a folder",
+    subtitle: `${found.folder || "Folder"}${subfolders ? ` · ${subfolders} ${subfolders === 1 ? "subfolder" : "subfolders"}` : ""}`,
+    html: `<div class="coll-pick">${kinds.map((f) => `<label class="check"><input type="checkbox" data-fmt="${f}"${f === "epub" || kinds.length === 1 ? " checked" : ""}> ${FORMATS[f]} <span class="muted">· ${count(f)} ${count(f) === 1 ? "book" : "books"}</span></label>`).join("")}</div>
+      <p class="sh-hint">Books already on your shelf are skipped.</p>
+      <div class="sh-actions"><button class="btn" data-no>Cancel</button><button class="btn primary" data-go></button></div>`,
+    wire: (box, done) => {
+      const go = box.querySelector("[data-go]");
+      const chosen = () => [...box.querySelectorAll("[data-fmt]")].filter((x) => x.checked).map((x) => x.dataset.fmt);
+      const sync = () => {
+        const n = books.filter((b) => chosen().includes(fmtOf(b.name))).length;
+        go.textContent = n ? `Add ${n} ${n === 1 ? "book" : "books"}` : "Add";
+        go.disabled = !n;
+      };
+      box.addEventListener("change", sync);
+      sync();
+      box.querySelector("[data-no]").addEventListener("click", () => done(null));
+      go.addEventListener("click", () => done(chosen()));
+    },
+  });
+  if (!pick?.length) return;
+  const todo = books.filter((b) => pick.includes(fmtOf(b.name)));
+  const stats = { added: 0, had: 0, restored: 0, refused: 0, failed: 0, fromReadEra: 0 };
+  for (let i = 0; i < todo.length; i++) {
+    toast(`Adding ${i + 1} of ${todo.length}…`);
+    try { await importFiles([await native.readFolderBook(todo[i])], { silent: true, stats }); }
+    catch (err) { console.warn("folder book", todo[i].name, err); stats.failed++; }
+    if (i % 10 === 9) render(); // let the shelf fill in as it goes
+  }
+  const parts = [`${stats.added} ${stats.added === 1 ? "book" : "books"} added`];
+  if (stats.fromReadEra) parts.push(`${stats.fromReadEra} with your place from ReadEra`);
+  if (stats.had) parts.push(`${stats.had} already on your shelf`);
+  if (stats.restored) parts.push(`${stats.restored} back from the Trash`);
+  if (stats.failed + stats.refused) parts.push(`${stats.failed + stats.refused} couldn't be read`);
+  toast(parts.join(" · "));
+  const s = section();
+  if (stats.added && (s === "books" || s === "docs") && !pick.includes(s === "books" ? "epub" : "pdf")) await setSection(s === "books" ? "docs" : "books");
+  else await render();
+  refreshRemote(false);
 }
 
 // ---------------------------------------------------------------- Sailfish: books on the device

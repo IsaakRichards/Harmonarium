@@ -449,6 +449,41 @@ check("Comfortaa is offered and loads from the app", f && /Comfortaa/.test(f.p) 
 await setEmbedded(true);
 await pickFont("");
 
+// ---- Adding a whole folder ------------------------------------------------------------------
+async function tinyEpub(title) {
+  const zip = new JSZip();
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+  zip.file("META-INF/container.xml", `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="c.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+  zip.file("c.opf", `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">${title}</dc:identifier><dc:title>${title}</dc:title><dc:language>en</dc:language></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/></spine></package>`);
+  zip.file("a.xhtml", `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${title}</title></head><body><p>${title}</p></body></html>`);
+  return zip.generateAsync({ type: "nodebuffer", mimeType: "application/epub+zip" });
+}
+const { mkdtemp, mkdir: mkdirp } = await import("node:fs/promises");
+const os = await import("node:os");
+const shelfDir = path.join(await mkdtemp(path.join(os.tmpdir(), "hm-folder-")), "My Books");
+await mkdirp(path.join(shelfDir, "Series", "Deep"), { recursive: true });
+await mkdirp(path.join(shelfDir, ".hidden"), { recursive: true });
+await writeFile(path.join(shelfDir, "already.epub"), epubBuf);                       // on the shelf already
+await writeFile(path.join(shelfDir, "Series", "Deep", "folder-one.epub"), await tinyEpub("Folder Book One"));
+await writeFile(path.join(shelfDir, "Series", "folder-two.epub"), await tinyEpub("Folder Book Two"));
+await writeFile(path.join(shelfDir, ".hidden", "skip.epub"), await tinyEpub("Hidden Book"));
+await writeFile(path.join(shelfDir, "notes.txt"), "not a book");
+if (await page.isVisible("#view-reader")) { await showBars(); await page.click("#btn-back"); await page.waitForTimeout(600); }
+await page.click(".add-btn");
+await page.waitForSelector("#sheet:not([hidden])");
+const chooser = page.waitForEvent("filechooser");
+await page.click('#sheet .sh-menu button:has-text("whole folder")');
+await (await chooser).setFiles(shelfDir);
+await page.waitForSelector("#sheet [data-go]", { timeout: 15000 });
+const folderCard = (await page.textContent("#sheet")).replace(/\s+/g, " ");
+check("Adding a folder finds its EPUBs, subfolders too, hidden ones skipped", /EPUB · 3 books/.test(folderCard), folderCard);
+await page.click("#sheet [data-go]");
+await page.waitForFunction(() => /added/.test(document.getElementById("toast").textContent), null, { timeout: 30000 });
+const folderMsg = await page.textContent("#toast");
+check("…and adds the new ones, skipping one already on the shelf", /2 books added/.test(folderMsg) && /1 already on your shelf/.test(folderMsg), folderMsg);
+const shelfTitles = await page.evaluate(() => [...document.querySelectorAll(".lib-title")].map((t) => t.textContent));
+check("…which then sit on the shelf", shelfTitles.includes("Folder Book One") && shelfTitles.includes("Folder Book Two") && !shelfTitles.includes("Hidden Book"), shelfTitles.join(", "));
+
 check("No page errors", errors.length === 0, errors.slice(0, 5).join(" | "));
 
 await writeFile(`${OUT}/results.json`, JSON.stringify({ results, errors }, null, 2));

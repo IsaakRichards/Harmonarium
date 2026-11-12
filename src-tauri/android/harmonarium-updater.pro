@@ -7,3 +7,8 @@
 -keepclassmembers class com.isaakrichards.harmonarium.HarmonariumScreen {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# …and on window.HarmonariumFolder (adding a whole folder of books).
+-keepclassmembers class com.isaakrichards.harmonarium.HarmonariumFolder {
+    @android.webkit.JavascriptInterface <methods>;
+}
