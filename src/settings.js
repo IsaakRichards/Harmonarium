@@ -12,6 +12,7 @@ const DEFAULTS = {
   nightTheme: "dark", //   and the last night theme (dark | black)
   fontSize: 100,
   fontFamily: "",
+  embeddedFonts: true, // use the fonts built into a book where it uses them (ReadEra's "Embedded")
   lineHeight: "",
   sort: "recent",
   keypadMode: "auto", // "auto" | "on" | "off"

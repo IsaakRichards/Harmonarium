@@ -14,7 +14,7 @@ Your lists and your place in every book live in a Google Sheet that you own.</p>
 - **Sections, as in ReadEra:** Books (EPUB), Documents (PDF), Favorites, To read, Have read, Authors, Series (read from Calibre and EPUB 3 metadata), your own Collections, and a Trash you can restore from. Each book's **⋮** menu holds About, Favorites, To read / Have read, Collections and Move to trash. Finishing a book files it under Have read.
 - **PDFs** scroll as one column of pages fitted to the width. Tap the edges to move a screen, pinch or use **Zoom**, and the Night and Sepia themes tint the pages too. The document's outline becomes its Contents.
 - **ReadEra-style reader.** Pages turn by tapping the edges, swiping, or with the arrow keys. Wide screens show two pages side by side, and a tap in the middle hides the bars. It has a table of contents and a progress slider.
-- **Text settings:** Day, Parchment, Night and Midnight themes, font size, font family, line spacing, margins, justified or left-aligned text, hyphenation, a brightness dimmer, **Pages** or **Scroll** mode, and keeping the screen on.
+- **Text settings:** Day, Parchment, Night and Midnight themes, font size, font family (including Comfortaa, bundled so it works offline), ReadEra's **Embedded** switch (keep a book's own built-in fonts where it uses them, or replace them with yours), line spacing, margins, justified or left-aligned text, hyphenation, a brightness dimmer, **Pages** or **Scroll** mode, and keeping the screen on.
 - **Bookmarks, quotes and notes.** The bookmark at the top marks the page (a red ribbon shows it). Select text for **Copy**, **Quote** (highlighted in the book), **Note** (a quote with your words) or **Find**. Contents has tabs for Bookmarks, Quotes and Notes; tap a highlight to copy, edit or delete it.
 - **Find in book** searches every chapter (or every PDF page), and **Go to page** takes a page number or a percent. After any jump (contents, search, a bookmark, a footnote) a **Back** chip returns you to where you were.
 - **Cross-device sync of your place.** Open a book that you read further on another device and Harmonarium offers *"On Pixel you reached 63%. Jump there?"*. Progress made offline is queued and sent later.
@@ -167,3 +167,5 @@ sailfish/           Sailfish OS app: Qt/QML WebView shell + local server, RPM sp
 - [x] PDF support
 - [ ] Quotes and notes in PDFs (needs a text layer)
 - [ ] FB2, MOBI, DjVu and DOCX support
+
+Comfortaa (`public/fonts/Comfortaa.ttf`) is by the Comfortaa Project Authors and is shipped unmodified under the SIL Open Font License 1.1 (`public/fonts/Comfortaa-OFL.txt`).

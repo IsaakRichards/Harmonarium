@@ -118,10 +118,15 @@ export function init(h) {
   for (const [id, key] of [["font-family", "fontFamily"], ["line-height", "lineHeight"], ["text-align", "textAlign"], ["margins", "margin"]]) {
     $(id).addEventListener("change", async (e) => {
       await settings.update({ [key]: e.target.value });
+      if (key === "fontFamily") { if (rendition) await rebuild(); return; } // fonts are woven into the book's own styles
       applyUserStyle();
       if (key === "margin") relayout();
     });
   }
+  $("embedded-fonts").addEventListener("change", async (e) => {
+    await settings.update({ embeddedFonts: e.target.checked });
+    if (rendition) await rebuild(); // the book's fonts are put back or taken out as each chapter loads
+  });
   $("hyphens").addEventListener("change", async (e) => { await settings.update({ hyphens: e.target.checked }); applyUserStyle(); });
   $("keep-awake").addEventListener("change", async (e) => { await settings.update({ keepAwake: e.target.checked }); awake(!!meta); });
   for (const id of ["brightness", "re-bright"]) {
@@ -855,14 +860,59 @@ function readeraCss() {
   return "body { padding-top: 12px !important; padding-bottom: 4px !important; }";
 }
 
+/** Fonts we ship (they work offline). Comfortaa: SIL Open Font License, see public/fonts/. */
+const FONT_FACES = () => {
+  const url = (f) => new URL(`fonts/${f}`, document.baseURI).href;
+  return `@font-face { font-family: "Comfortaa"; src: url("${url("Comfortaa.ttf")}") format("truetype"); font-weight: 300 700; font-display: swap; }`;
+};
+
 function userCss() {
-  const { fontFamily, lineHeight } = settings.get();
+  const { fontFamily, lineHeight, embeddedFonts } = settings.get();
   const rules = [];
-  if (fontFamily) rules.push(`font-family: ${fontFamily} !important;`);
+  // With Embedded on, the chosen font is woven into the book's own styles instead (weaveFonts),
+  // so the book's built-in fonts keep their places; here it only sets the page's default.
+  if (fontFamily && embeddedFonts === false) rules.push(`font-family: ${fontFamily} !important;`);
   if (lineHeight) rules.push(`line-height: ${lineHeight} !important;`);
-  const extra = `${readeraCss()}\n${alignCss()}`;
+  const extra = `${FONT_FACES()}\n${fontFamily && embeddedFonts !== false ? `body { font-family: ${fontFamily} !important; }` : ""}\n${readeraCss()}\n${alignCss()}`;
   if (!rules.length) return extra;
-  return `body, p, div, span, li, blockquote, td { ${rules.join(" ")} }\n${extra}`;
+  return `body, p, div, span, li, blockquote, td, h1, h2, h3, h4, h5, h6 { ${rules.join(" ")} }\n${extra}`;
+}
+
+const OURS = new Set(["kls-user-style"]);
+const famName = (v) => String(v || "").trim().replace(/^["']|["']$/g, "").toLowerCase();
+
+/**
+ * ReadEra's "Embedded" setting, applied to a chapter as it loads.
+ *   Off: the book's built-in fonts (@font-face) are taken out, so its text falls back to your font.
+ *   On:  they stay wherever the book uses them, and your chosen font replaces every other font
+ *        the book names (so "serif", "Georgia"… become your font, its own typefaces don't).
+ */
+function weaveFonts(doc) {
+  const { fontFamily, embeddedFonts } = settings.get();
+  const sheets = [...doc.styleSheets].filter((s) => !OURS.has(s.ownerNode?.id));
+  const rulesOf = (s) => { try { return s.cssRules ? [...s.cssRules] : []; } catch { return []; } };
+  const walk = (list, fn) => { for (const r of list) { fn(r); if (r.cssRules) walk([...r.cssRules], fn); } };
+  if (embeddedFonts === false) {
+    for (const s of sheets) {
+      for (let i = rulesOf(s).length - 1; i >= 0; i--) {
+        try { if (s.cssRules[i].type === CSSRule.FONT_FACE_RULE) s.deleteRule(i); } catch { /* leave it */ }
+      }
+    }
+    return;
+  }
+  if (!fontFamily) return; // "Publisher": the book exactly as made
+  const embedded = new Set();
+  for (const s of sheets) walk(rulesOf(s), (r) => { if (r.type === CSSRule.FONT_FACE_RULE) embedded.add(famName(r.style.getPropertyValue("font-family"))); });
+  const ownFont = (value) => String(value).split(",").some((f) => embedded.has(famName(f)));
+  for (const s of sheets) {
+    walk(rulesOf(s), (r) => {
+      const v = r.style?.getPropertyValue?.("font-family");
+      if (v && !ownFont(v)) r.style.setProperty("font-family", fontFamily, "important");
+    });
+  }
+  for (const el of doc.querySelectorAll("[style*='font-family']")) {
+    if (!ownFont(el.style.fontFamily)) el.style.setProperty("font-family", fontFamily, "important");
+  }
 }
 
 /** Links to websites inside a book would turn the reader into a browser (and on phones
@@ -889,6 +939,7 @@ function injectUserStyle(contents) {
     doc.head.appendChild(el);
   }
   el.textContent = userCss();
+  if (!el.dataset.woven) { el.dataset.woven = "1"; try { weaveFonts(doc); } catch (err) { console.warn("fonts", err); } }
   // Hyphenation needs a language; borrow the book's when the chapter file has none.
   const html = doc.documentElement;
   if (!html.getAttribute("lang") && !html.getAttribute("xml:lang")) {
@@ -908,6 +959,7 @@ export function syncPanelState() {
   const s = settings.get();
   $("font-size-label").textContent = `${s.fontSize}%`;
   $("font-family").value = s.fontFamily;
+  $("embedded-fonts").checked = s.embeddedFonts !== false;
   $("line-height").value = s.lineHeight;
   $("page-turn").value = s.pageTurn || "slide";
   $("flow").value = s.flow || "paginated";

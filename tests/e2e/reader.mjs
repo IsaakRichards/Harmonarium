@@ -395,6 +395,60 @@ await page.waitForTimeout(5000);
 const [nowP, ofP] = ((await page.textContent("#re-pages")).match(/(\d+) of (\d+)/) || []).slice(1).map(Number);
 check("…and the book opens halfway through", ofP > 0 && Math.abs(nowP / ofP - 0.5) < 0.08, `${nowP} of ${ofP} · ${await cfi()}`);
 
+// ---- Fonts: Comfortaa, and ReadEra's "Embedded" ---------------------------------------------
+// A second little book whose headings use a font built into it ("BookFace"); its paragraphs name
+// an ordinary font (Georgia), which the chosen font should replace.
+async function makeFontEpub() {
+  const zip = new JSZip();
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+  zip.file("META-INF/container.xml", `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+  zip.file("OEBPS/face.ttf", await readFile(path.resolve("public/fonts/Comfortaa.ttf")));
+  zip.file("OEBPS/style.css", `@font-face { font-family: "BookFace"; src: url(face.ttf); } h1 { font-family: "BookFace", serif; } p { font-family: Georgia, serif; }`);
+  const body = Array.from({ length: 12 }, (_, i) => `<p>Line ${i + 1} of a short chapter about fonts and the pages they sit on.</p>`).join("");
+  zip.file("OEBPS/ch1.xhtml", `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body><h1>Of Fonts</h1>${body}</body></html>`);
+  zip.file("OEBPS/nav.xhtml", `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Contents</title></head><body><nav epub:type="toc"><ol><li><a href="ch1.xhtml">Of Fonts</a></li></ol></nav></body></html>`);
+  zip.file("OEBPS/content.opf", `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">harmonarium-fonts</dc:identifier><dc:title>The Font Test</dc:title><dc:language>en</dc:language></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/><item id="css" href="style.css" media-type="text/css"/><item id="f" href="face.ttf" media-type="font/ttf"/></manifest><spine><itemref idref="c1"/></spine></package>`);
+  return zip.generateAsync({ type: "nodebuffer", mimeType: "application/epub+zip" });
+}
+if (await page.isVisible("#view-reader")) { await showBars(); await page.click("#btn-back"); await page.waitForTimeout(600); }
+await page.setInputFiles("#file-input", { name: "font-test.epub", mimeType: "application/epub+zip", buffer: await makeFontEpub() });
+await page.waitForFunction(() => [...document.querySelectorAll(".lib-title")].some((t) => t.textContent.includes("Font Test")), null, { timeout: 15000 });
+await page.click('.lib-card:has-text("The Font Test") .lib-open');
+await page.waitForSelector("#viewer iframe", { timeout: 15000 });
+await page.waitForTimeout(1500);
+const fontsNow = async () => {
+  for (const f of page.frames()) {
+    if (f === page.mainFrame()) continue;
+    const r = await f.evaluate(async () => {
+      const h = document.querySelector("h1"), p = document.querySelector("p");
+      if (!h || !p) return null;
+      await document.fonts.ready;
+      return {
+        h1: getComputedStyle(h).fontFamily, p: getComputedStyle(p).fontFamily,
+        bookFace: [...document.fonts].some((x) => x.family.replace(/"/g, "") === "BookFace"),
+        comfortaa: (await document.fonts.load("16px Comfortaa")).length > 0,
+      };
+    }).catch(() => null);
+    if (r) return r;
+  }
+  return null;
+};
+async function pickFont(value) { await showBars(); await page.click("#re-aa"); await page.selectOption("#font-family", value); await page.waitForTimeout(1800); await page.click("#re-aa").catch(() => {}); }
+async function setEmbedded(on) { await showBars(); await page.click("#re-aa"); if ((await page.isChecked("#embedded-fonts")) !== on) await page.click("#embedded-fonts"); await page.waitForTimeout(1800); await page.click("#re-aa").catch(() => {}); }
+
+await pickFont("'Courier New', monospace");
+let f = await fontsNow();
+check("Embedded on: the book's own heading font stays", f && /BookFace/.test(f.h1), JSON.stringify(f));
+check("…and the chosen font replaces the font the book merely names", f && /Courier New/.test(f.p), JSON.stringify(f));
+await setEmbedded(false);
+f = await fontsNow();
+check("Embedded off: the chosen font everywhere, the built-in font left out", f && /Courier New/.test(f.h1) && /Courier New/.test(f.p) && !f.bookFace, JSON.stringify(f));
+await pickFont("Comfortaa, sans-serif");
+f = await fontsNow();
+check("Comfortaa is offered and loads from the app", f && /Comfortaa/.test(f.p) && f.comfortaa, JSON.stringify(f));
+await setEmbedded(true);
+await pickFont("");
+
 check("No page errors", errors.length === 0, errors.slice(0, 5).join(" | "));
 
 await writeFile(`${OUT}/results.json`, JSON.stringify({ results, errors }, null, 2));
