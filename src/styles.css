@@ -1232,3 +1232,12 @@ html:not([data-readera]) .top .wrap > .tabs { grid-column: 1; grid-row: 1; justi
 html:not([data-readera]) .top .wrap > .brand { grid-column: 2; grid-row: 1; }
 .top .sync .sync-t { display: none; }
 .top .sync { padding: 0; width: 40px; height: 40px; justify-content: center; }
+
+/* The progress bar keeps clear of Android's gesture strip at the bottom of the screen, and lets
+   upward swipes go to the system rather than to the bar. */
+#progress-slider { touch-action: pan-y; }
+.reader-foot { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+html[data-re-reader] .reader-foot { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+/* While the reader's bars are showing, messages rise above the bottom bar instead of covering
+   the progress bar. */
+html[data-re-reader] body.reading:not(.immersive) .toast { bottom: calc(var(--re-foot-h, 96px) + 10px); }

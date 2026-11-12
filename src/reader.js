@@ -146,7 +146,24 @@ export function init(h) {
   $("re-bm").addEventListener("click", () => marks.toggleBookmark());
 
   const slider = $("progress-slider");
+  // The bar sits where Android's home gesture starts, so only a deliberate sideways drag moves
+  // the book: a touch that heads upward, is taken by the system, or is just a tap snaps back.
+  let scrub = null; // { x, y, lx, ly, value, cancelled, fromEdge }
+  const track = (e) => { if (scrub) { scrub.lx = e.clientX; scrub.ly = e.clientY; } };
+  slider.addEventListener("pointerdown", (e) => {
+    scrub = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, value: slider.value, cancelled: false,
+      fromEdge: e.pointerType === "touch" && e.clientY > window.innerHeight - 18 };
+  }, { passive: true });
+  slider.addEventListener("pointermove", track, { passive: true });
+  slider.addEventListener("pointerup", track, { passive: true });
+  slider.addEventListener("pointercancel", () => { if (scrub) { scrub.cancelled = true; slider.value = scrub.value; } });
   slider.addEventListener("change", () => {
+    const s = scrub;
+    scrub = null;
+    if (s) {
+      const dx = Math.abs(s.lx - s.x), dy = Math.abs(s.ly - s.y);
+      if (s.cancelled || s.fromEdge || dx < 12 || dy > dx) { slider.value = s.value; return; }
+    }
     finder.noteJump();
     const f = slider.value / 1000;
     if (pdfView) pdfView.goToPercent(f);
@@ -165,7 +182,7 @@ export function init(h) {
   // The brightness strip and the back link sit just inside the bars, whatever their height.
   if ("ResizeObserver" in window) {
     const ro = new ResizeObserver(() => {
-      const st = document.getElementById("view-reader").style;
+      const st = document.documentElement.style; // read by the reader and by messages (toasts)
       st.setProperty("--re-bar-h", `${$("reader-bar").offsetHeight}px`);
       st.setProperty("--re-foot-h", `${$("reader-foot").offsetHeight}px`);
     });
