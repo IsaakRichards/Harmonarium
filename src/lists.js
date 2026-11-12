@@ -259,7 +259,7 @@ function renderHeader() {
 
 function renderSync(force) {
   const s = $('#sync');
-  const set = (st, txt) => { s.dataset.s = st; s.title = txt; s.innerHTML = `<span class="sync-t">${esc(txt)}</span>`; };
+  const set = (st, txt) => { s.dataset.s = st; s.title = txt; s.setAttribute('aria-label', `Sync now · ${txt}`); s.innerHTML = `<span class="sync-t">${esc(txt)}</span>`; };
   if (!connected()) return set('local', 'This device');
   if (writing) return set('busy', 'Saving…');
   if (force === 'busy' && !loaded) return set('busy', 'Syncing…');

@@ -1220,3 +1220,15 @@ html[data-re-reader] #toc-list a.current { color: inherit; font-weight: 700; bac
 html[data-re-reader] .toc-drawer .mark-list { display: flex; flex-direction: column; gap: 4px; padding: 6px max(6px, env(safe-area-inset-right, 0px)) 12px max(6px, env(safe-area-inset-left, 0px)); }
 html[data-re-reader] .toc-drawer .mark-list[hidden] { display: none; }
 html[data-re-reader] .toc-drawer .mark-row { background: var(--toc-card); border: 0; border-radius: 3px; }
+
+/* Home screen: no app name, logo or sync status text; the sync dot and Settings stay, at the right.
+   (The status is still the dot's colour, its tooltip, and what a screen reader says.) */
+.brand .crest, .brand .brand-text { display: none; }
+.brand .top-actions { margin-left: auto; }
+/* …seated on the same row as the Shelf / Lists tabs, so no row is left empty */
+html:not([data-readera]) .top .wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; }
+html:not([data-readera]) .top .wrap > * { grid-column: 1 / -1; }
+html:not([data-readera]) .top .wrap > .tabs { grid-column: 1; grid-row: 1; justify-self: start; margin-top: 0; }
+html:not([data-readera]) .top .wrap > .brand { grid-column: 2; grid-row: 1; }
+.top .sync .sync-t { display: none; }
+.top .sync { padding: 0; width: 40px; height: 40px; justify-content: center; }
