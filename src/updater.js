@@ -116,17 +116,20 @@ async function checkWithGitHub(k) {
   const assets = rel.assets || [];
   const page = rel.html_url || RELEASES;
 
+  // A release built for other platforms only (say, an Android-only fix) has nothing for this
+  // device: that isn't an error, there's simply no update here.
   if (k === "android") {
     const a = assets.find((x) => x.name === "Harmonarium.apk");
-    if (!a) throw new Error(`The ${version} release has no Harmonarium.apk`);
+    if (!a) return { version, none: true };
     return { version, size: a.size, page, url: a.browser_download_url, how: "apk" };
   }
   if (k === "sailfish") {
     const { arch } = await native.updateStatus();
     const a = assets.find((x) => x.name.startsWith("harbour-harmonarium") && x.name.endsWith(`.${arch}.rpm`));
-    if (!a) throw new Error(`The ${version} release has no RPM for ${arch} phones`);
+    if (!a) return { version, none: true };
     return { version, size: a.size, page, url: a.browser_download_url, how: "rpm" };
   }
+  if (!assets.some((x) => /\.(AppImage|deb|rpm|exe|msi)$/i.test(x.name) && !x.name.startsWith("harbour-"))) return { version, none: true };
   return { version, size: 0, page, how: "page" };
 }
 
@@ -147,6 +150,7 @@ export async function check() {
       }
     }
     if (!release) release = await checkWithGitHub(k);
+    if (release.none) { set({ status: "latest", release: null }); return remember(); }
     set({ release, status: compare(release.version, currentVersion()) > 0 ? "available" : "latest" });
     return remember();
   } catch (err) {

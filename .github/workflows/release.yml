@@ -11,17 +11,24 @@ on:
       tag:
         description: Tag to release (created on the current commit if it doesn't exist)
         required: true
+      platforms:
+        description: Build every platform, or Android only (for an Android-only fix)
+        type: choice
+        options: [all, android]
+        default: all
 
 permissions:
   contents: write
 
 jobs:
   linux:
+    if: inputs.platforms != 'android'
     uses: ./.github/workflows/linux.yml
     secrets: inherit
     with:
       version: ${{ inputs.tag || github.ref_name }}
   windows:
+    if: inputs.platforms != 'android'
     uses: ./.github/workflows/windows.yml
     secrets: inherit
     with:
@@ -32,6 +39,7 @@ jobs:
     with:
       version: ${{ inputs.tag || github.ref_name }}
   sailfish:
+    if: inputs.platforms != 'android'
     uses: ./.github/workflows/sailfish.yml
     with:
       version: ${{ inputs.tag || github.ref_name }}
@@ -39,6 +47,8 @@ jobs:
   publish:
     name: Publish release
     needs: [linux, windows, android, sailfish]
+    # Platforms left out (an Android-only release) count as skipped, not failed.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -62,12 +72,26 @@ jobs:
       - name: Updater manifest
         run: node repo/scripts/latest-json.mjs release "${{ inputs.tag || github.ref_name }}"
 
+      # An Android-only release becomes the newest one, where the Windows/Linux updater looks for
+      # latest.json. Carry over the previous release's, so desktop copies see they're up to date.
+      - name: Keep the desktop updater's manifest
+        if: inputs.platforms == 'android'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f release/latest.json ]; then
+            gh release download --repo "${{ github.repository }}" --pattern latest.json --dir release || echo "no earlier latest.json"
+          fi
+          ls -la release
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           name: Harmonarium ${{ inputs.tag || github.ref_name }}
           generate_release_notes: true
           body: |
+            ${{ inputs.platforms == 'android' && '**Android only.** The other platforms are unchanged since the previous release.' || '' }}
+
             **Which file do I want?**
             - **Android:** `Harmonarium.apk`
             - **Sailfish OS:** `harbour-harmonarium-…aarch64.rpm` (newer phones) or `…armv7hl.rpm` (older ones)
