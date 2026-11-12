@@ -289,6 +289,13 @@ async function seriesOf(book) {
   } catch { return {}; }
 }
 
+/** Close a book opened just to read it. epub.js keeps rewriting its stylesheets in the background
+ *  until the book is "opened" (later than "ready"); closing before that made it fail noisily. */
+async function closeQuietly(book) {
+  try { await Promise.race([book.opened, new Promise((r) => setTimeout(r, 5000))]); } catch { /* close anyway */ }
+  try { book.destroy(); } catch { /* already gone */ }
+}
+
 async function readMetadata(buf, fallbackName) {
   const book = ePub(buf);
   try {
@@ -306,7 +313,7 @@ async function readMetadata(buf, fallbackName) {
       ...(await seriesOf(book)),
     };
   } finally {
-    book.destroy();
+    await closeQuietly(book);
   }
 }
 
@@ -320,7 +327,7 @@ async function backfill() {
         const buf = await db.get("files", b.id);
         if (buf) {
           const book = ePub(buf.slice(0));
-          try { await book.ready; Object.assign(extra, await seriesOf(book)); } catch { /* keep going */ } finally { book.destroy(); }
+          try { await book.ready; Object.assign(extra, await seriesOf(book)); } catch { /* keep going */ } finally { await closeQuietly(book); }
         }
       }
       const now = await db.get("books", b.id);
