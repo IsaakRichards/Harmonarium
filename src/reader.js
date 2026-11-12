@@ -177,7 +177,21 @@ export function init(h) {
 
   // Keys are handled by dpad.js (see api() below).
   // Re-paginate on rotation / window resize.
-  window.addEventListener("resize", relayout);
+  // Re-paginate whenever the page's frame changes size, not only when the window does: on phones
+  // the safe-area margins change as Android's bars hide and show (and with rotation, split screen
+  // or the keyboard) without any window resize event. Pages left at the old height ran their
+  // bottom line past the visible edge.
+  window.addEventListener("resize", scheduleRelayout);
+  if ("ResizeObserver" in window) {
+    let seen = "";
+    new ResizeObserver(() => {
+      const r = $("viewer").getBoundingClientRect();
+      const size = `${Math.round(r.width)}x${Math.round(r.height)}`;
+      if (size === seen) return;
+      seen = size;
+      scheduleRelayout();
+    }).observe($("viewer"));
+  }
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") { awake(!!meta); fullScreen(!!meta); return; }
     // Leaving the app (home button, switching apps): save the exact page now, as Android may close us.
@@ -496,6 +510,12 @@ function pageGap() {
   return 2 * Math.round(Math.min(48, Math.max(14, w * 0.05)) * f);
 }
 const wantGap = () => (readera.readerOn() || (settings.get().margin && settings.get().margin !== "m") ? pageGap() : undefined);
+
+let relayoutTimer = 0;
+function scheduleRelayout() {
+  clearTimeout(relayoutTimer);
+  relayoutTimer = setTimeout(() => { if (rendition || pdfView) relayout(); }, 120);
+}
 
 /** Recalculate margins and re-paginate, e.g. after rotating the phone. */
 function relayout() {
