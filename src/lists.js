@@ -7,6 +7,7 @@ import { toast } from './util.js';
 import * as updater from './updater.js';
 import * as appearance from './appearance.js';
 import * as readera from './readera.js';
+import * as readeraImport from './readeraimport.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -627,6 +628,11 @@ function renderSettings(p) {
     <p class="p-desc">Keypad mode keeps the focus ring visible and adds number keys: 2 4 6 8 move, 5 selects. At home 1 Shelf, 3 Lists, 0 Add books, * Search, # Settings. In a book 4/6 turn pages, 1 Contents, 3 Text, * and # change the size, 0 changes the theme.</p>
     <p class="p-desc">Books match across devices only when each holds the very same EPUB file.</p>
     <hr class="sep">
+    <p class="p-kicker">Import from ReadEra</p>
+    <p class="p-desc">Bring over how far you've read each book. In ReadEra, make a backup (Settings → Backup &amp; restore), then choose that file here. Books that already have a place in Harmonarium keep it; books you haven't added yet get theirs when you add them.</p>
+    <div class="row start"><label class="btn small">Choose ReadEra backup…<input id="s-readera-import" type="file" hidden></label></div>
+    <p class="status" id="s-readera-import-status"></p>
+    <hr class="sep">
     <p class="p-kicker">Covers</p>
     <p class="p-desc">List covers come from Open Library, with Google Books as a backup. ${n} of ${lists.reduce((a, L) => a + L.items.length, 0)} books have one.</p>
     <div class="row start"><button class="btn small" data-recovers>Look for missing covers again</button></div>
@@ -707,6 +713,23 @@ $('#panel').addEventListener('change', async e => {
       toast(e.target.checked ? 'ReadEra look on' : 'ReadEra look off');
     }
     else if (e.target.id === 's-readera-tone') readera.setTone(e.target.value);
+    else if (e.target.id === 's-readera-import' && e.target.files?.[0]) {
+      const out = $('#s-readera-import-status'), file = e.target.files[0];
+      e.target.value = '';
+      out.textContent = 'Reading the backup…';
+      try {
+        const r = await readeraImport.importBackup(file);
+        const parts = [];
+        if (r.applied) parts.push(`${r.applied} ${r.applied === 1 ? 'book has its' : 'books have their'} place from ReadEra`);
+        if (r.kept) parts.push(`${r.kept} already had a place here and kept it`);
+        if (r.waiting) parts.push(`${r.waiting} ${r.waiting === 1 ? "isn't" : "aren't"} on your shelf yet and will get ${r.waiting === 1 ? 'its' : 'their'} place when added`);
+        out.textContent = r.total ? parts.join('; ') + '.' : 'No books with progress were found in that backup.';
+        toast(r.applied ? `Imported your place in ${r.applied} ${r.applied === 1 ? 'book' : 'books'}` : 'ReadEra backup read');
+        window.dispatchEvent(new Event('harmonarium:shelf'));
+      } catch (err) {
+        out.textContent = `Couldn't import: ${err.message}`;
+      }
+    }
     else if (e.target.id === 's-re-reader') readera.setReader(e.target.checked);
     else if (e.target.id === 's-keypad') { await settings.update({ keypadMode: e.target.value }); window.dispatchEvent(new Event('harmonarium:keypad')); }
     return;

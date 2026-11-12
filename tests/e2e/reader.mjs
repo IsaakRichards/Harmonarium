@@ -8,6 +8,7 @@ import { createServer } from "node:http";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
+import { createHash } from "node:crypto";
 
 const DIST = path.resolve("dist");
 const OUT = path.resolve("test-results");
@@ -61,7 +62,8 @@ page.on("console", (m) => { if (m.type() === "error" && !BENIGN.some((re) => re.
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 
 await page.goto("http://127.0.0.1:4173/");
-await page.setInputFiles("#file-input", { name: "test-of-pages.epub", mimeType: "application/epub+zip", buffer: await makeEpub() });
+const epubBuf = await makeEpub();
+await page.setInputFiles("#file-input", { name: "test-of-pages.epub", mimeType: "application/epub+zip", buffer: epubBuf });
 await page.waitForSelector(".lib-card", { timeout: 15000 });
 check("EPUB imports onto the shelf", true, await page.innerText(".lib-title"));
 await page.click(".lib-open");
@@ -354,6 +356,39 @@ await page.selectOption("#lib-section", "favorites");
 await page.waitForTimeout(400);
 check("Favorites starts empty", (await page.$$(".lib-card")).length === 0);
 await page.selectOption("#lib-section", "books");
+
+// ---- Import from ReadEra: a backup's place goes to a book with none here -------------------
+if (await page.isVisible("#view-reader")) { await showBars(); await page.click("#btn-back"); await page.waitForTimeout(600); }
+const bookId = await page.getAttribute(".lib-card", "data-id");
+// Forget this book's place (and page index) here, as if it had never been opened.
+await page.evaluate((id) => new Promise((res, rej) => {
+  const r = indexedDB.open("harmonarium");
+  r.onerror = rej;
+  r.onsuccess = () => {
+    const t = r.result.transaction(["progress", "locations"], "readwrite");
+    t.objectStore("progress").delete(id);
+    t.objectStore("locations").delete(id);
+    t.oncomplete = () => { r.result.close(); res(); };
+    t.onerror = rej;
+  };
+}), bookId);
+const backup = new JSZip();
+backup.file("library.json", JSON.stringify({ docs: [
+  { data: { doc_sha1: createHash("sha1").update(epubBuf).digest("hex"), doc_position: JSON.stringify({ ratio: 0.5 }), doc_last_read_time: Date.now() - 60000 } },
+] }));
+await page.click("#open-settings");
+await page.setInputFiles("#s-readera-import", { name: "ReadEra.bak", mimeType: "application/octet-stream", buffer: await backup.generateAsync({ type: "nodebuffer" }) });
+await page.waitForFunction(() => /place|Couldn't|No books/.test(document.getElementById("s-readera-import-status").textContent), null, { timeout: 15000 });
+const importStatus = await page.textContent("#s-readera-import-status");
+check("A ReadEra backup imports the place of a book with none here", /1 book has its place from ReadEra/.test(importStatus), importStatus);
+await page.keyboard.press("Escape");
+await page.waitForTimeout(500);
+check("…and its card shows ReadEra's progress", (await page.innerText(".lib-sub")).includes("50%"), await page.innerText(".lib-sub"));
+await page.click(".lib-open");
+await page.waitForSelector("#viewer iframe", { timeout: 15000 });
+await page.waitForTimeout(5000);
+const [nowP, ofP] = ((await page.textContent("#re-pages")).match(/(\d+) of (\d+)/) || []).slice(1).map(Number);
+check("…and the book opens halfway through", ofP > 0 && Math.abs(nowP / ofP - 0.5) < 0.08, `${nowP} of ${ofP} · ${await cfi()}`);
 
 check("No page errors", errors.length === 0, errors.slice(0, 5).join(" | "));
 

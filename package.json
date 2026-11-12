@@ -23,7 +23,8 @@
     "@tauri-apps/plugin-process": "^2.0.0",
     "@tauri-apps/plugin-updater": "^2.0.0",
     "epubjs": "^0.3.93",
-    "pdfjs-dist": "^6.2.108"
+    "pdfjs-dist": "^6.2.108",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

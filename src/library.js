@@ -10,6 +10,7 @@ import * as native from "./native.js";
 import * as pdfengine from "./pdfengine.js";
 import * as sheet from "./sheet.js";
 import * as about from "./aboutbook.js";
+import * as readeraImport from "./readeraimport.js";
 
 let hooks = { open: () => {}, onShelf: () => {}, listFor: () => null, onSection: () => {} };
 let remoteHints = new Map(); // bookId -> newest entry from another device
@@ -81,6 +82,7 @@ export function init(h) {
     e.preventDefault(); leaveGroup();
   });
 
+  window.addEventListener("harmonarium:shelf", () => render()); // e.g. after importing places from ReadEra
   backfill(); // series and format for books added before this version
 }
 
@@ -129,7 +131,7 @@ function kindOf(buf) {
 export async function importFiles(files, { quiet = false } = {}) {
   // Judge each file by what's inside, not its name: Android's file picker often hands over
   // names without ".epub" (or none at all) and a generic type.
-  let added = 0, restored = 0, refused = 0;
+  let added = 0, restored = 0, refused = 0, fromReadEra = 0;
   const ids = [];
   for (const file of files) {
     try {
@@ -147,11 +149,14 @@ export async function importFiles(files, { quiet = false } = {}) {
       const pdf = kind === "pdf";
       const meta = pdf ? await pdfengine.metadata(buf, file.name) : await readMetadata(buf.slice(0), file.name);
       await db.put("files", buf, id);
-      await db.put("books", {
+      const record = {
         id, ...meta, format: pdf ? "pdf" : "epub", size: buf.byteLength, addedAt: Date.now(), lastOpenedAt: 0,
         favorite: false, status: "", collections: [], metaV: 2,
-      });
+      };
+      await db.put("books", record);
       added++;
+      // A place imported from ReadEra may be waiting for this very file.
+      try { if (await readeraImport.applyPending(record, buf)) fromReadEra++; } catch (err) { console.warn("ReadEra place", err); }
     } catch (err) {
       console.error(err);
       ids.push(null);
@@ -160,7 +165,8 @@ export async function importFiles(files, { quiet = false } = {}) {
   }
   if (refused && !added && !restored) toast(refused === 1 ? "That file isn't an EPUB or a PDF" : "Those files aren't EPUBs or PDFs");
   else if (refused) toast(`${refused} ${refused === 1 ? "file wasn't an EPUB or PDF" : "files weren't EPUBs or PDFs"}; the rest were added`);
-  if (added) toast(added === 1 ? "A new book lands on your shelf" : `${added} new books land on your shelf`);
+  if (added) toast((added === 1 ? "A new book lands on your shelf" : `${added} new books land on your shelf`)
+    + (fromReadEra ? ` · ${fromReadEra === added ? "" : `${fromReadEra} `}with your place from ReadEra` : ""));
   else if (restored) toast(restored === 1 ? "Brought back from the Trash" : `${restored} books brought back from the Trash`);
   // Only PDFs added while looking at Books (or only EPUBs in Documents): show where they went.
   const fresh = (await Promise.all(ids.filter(Boolean).map((id) => db.get("books", id)))).filter(Boolean);

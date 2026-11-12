@@ -379,12 +379,32 @@ export async function open(id) {
     loadAnnotations();
 
     // Cached location index → accurate percentages immediately.
-    const savedLocations = await db.get("locations", id);
+    let savedLocations = await db.get("locations", id);
     if (savedLocations) { book.locations.load(savedLocations); renderToc(); }
 
-    anchorCfi = local?.cfi || null;
+    // A place imported from ReadEra is a fraction of the book: turn it into an exact spot, once.
+    let startAt = local?.cfi || null;
+    if (!startAt && local?.fromReadEra != null) {
+      try {
+        if (!savedLocations) {
+          toast("Finding your place from ReadEra…");
+          await book.locations.generate(1600);
+          savedLocations = book.locations.save();
+          await db.put("locations", savedLocations, id);
+          renderToc();
+        }
+        startAt = book.locations.cfiFromPercentage(local.fromReadEra);
+        const entry = { ...local, cfi: startAt };
+        delete entry.fromReadEra;
+        await db.put("progress", entry);
+        lastSavedCfi = startAt;
+        sync.queue(meta, entry);
+      } catch (err) { console.warn("ReadEra place", err); }
+    }
+
+    anchorCfi = startAt;
     anchored = !!anchorCfi && !scrolled();
-    await rendition.display(local?.cfi || undefined);
+    await rendition.display(startAt || undefined);
     tuneManager();
 
     if (!savedLocations) {
