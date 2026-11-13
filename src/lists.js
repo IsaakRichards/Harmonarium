@@ -8,6 +8,8 @@ import * as updater from './updater.js';
 import * as appearance from './appearance.js';
 import * as readera from './readera.js';
 import * as readeraImport from './readeraimport.js';
+import * as backup from './backup.js';
+import * as sheet from './sheet.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -628,6 +630,11 @@ function renderSettings(p) {
     <p class="p-desc">Keypad mode keeps the focus ring visible and adds number keys: 2 4 6 8 move, 5 selects. At home 1 Shelf, 3 Lists, 0 Add books, * Search, # Settings. In a book 4/6 turn pages, 1 Contents, 3 Text, * and # change the size, 0 changes the theme.</p>
     <p class="p-desc">Books match across devices only when each holds the very same EPUB file.</p>
     <hr class="sep">
+    <p class="p-kicker">Back up and restore</p>
+    <p class="p-desc">Save everything Harmonarium keeps in one file: your books, shelves and collections, how far you've read, bookmarks, quotes and notes, and your settings. Restoring adds the backup to what's here and deletes nothing; where both have a reading place, the newer one wins.</p>
+    <div class="row start"><button class="btn small" id="s-backup-export">Make a backup…</button><label class="btn small">Restore a backup…<input id="s-backup-import" type="file" hidden></label></div>
+    <p class="status" id="s-backup-status"></p>
+    <hr class="sep">
     <p class="p-kicker">Import from ReadEra</p>
     <p class="p-desc">Bring over how far you've read each book. In ReadEra, make a backup (Settings → Backup &amp; restore), then choose that file here. Books that already have a place in Harmonarium keep it; books you haven't added yet get theirs when you add them.</p>
     <div class="row start"><label class="btn small">Choose ReadEra backup…<input id="s-readera-import" type="file" hidden></label></div>
@@ -645,6 +652,7 @@ $('#panel').addEventListener('click', async e => {
   if (e.target.closest('[data-close]')) return closePanel();
   if (!panel) return;
   if (panel.kind === 'settings') {
+    if (e.target.closest('#s-backup-export')) return makeBackup();
     // Only the mode buttons: <html> carries data-mode too, so a bare [data-mode] matched every click.
     const mb = e.target.closest('.mode-btn[data-mode]');
     if (mb) {
@@ -729,6 +737,11 @@ $('#panel').addEventListener('change', async e => {
       } catch (err) {
         out.textContent = `Couldn't import: ${err.message}`;
       }
+    }
+    else if (e.target.id === 's-backup-import' && e.target.files?.[0]) {
+      const file = e.target.files[0];
+      e.target.value = '';
+      restoreBackup(file);
     }
     else if (e.target.id === 's-re-reader') readera.setReader(e.target.checked);
     else if (e.target.id === 's-keypad') { await settings.update({ keypadMode: e.target.value }); window.dispatchEvent(new Event('harmonarium:keypad')); }
@@ -857,4 +870,86 @@ export function init(h) {
   setInterval(() => { if (!document.hidden && connected()) pull(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && connected()) pull(); });
   window.addEventListener('online', () => { failed.clear(); if (connected()) { if (dirty) flush(); else pull(); } wantAll(); });
+}
+
+/* ---------- Harmonarium's own backup (backup.js) ---------- */
+const sizeText = n => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
+const backupStatus = t => { const el = $('#s-backup-status'); if (el) el.textContent = t; };
+let backupBusy = false;
+
+async function makeBackup() {
+  if (backupBusy) return;
+  const s = await backup.summary();
+  const choice = await sheet.card({
+    title: 'Make a backup',
+    subtitle: `${s.books} ${s.books === 1 ? 'book' : 'books'} on this device`,
+    html: `<div class="coll-pick"><label class="check"><input type="checkbox" data-books${s.books ? ' checked' : ' disabled'}> Include the books themselves <span class="muted">· ${sizeText(s.bookBytes)}</span></label></div>
+      <p class="sh-hint">Without them the backup is small; any book you add again later gets back its shelf, place and bookmarks. The file also holds your sync link and key, so keep it to yourself.</p>
+      <div class="sh-actions"><button class="btn" data-no>Cancel</button><button class="btn primary" data-go>Save backup…</button></div>`,
+    wire: (box, done) => {
+      box.querySelector('[data-no]').addEventListener('click', () => done(null));
+      box.querySelector('[data-go]').addEventListener('click', () => done({ withBooks: !!box.querySelector('[data-books]')?.checked }));
+    },
+  });
+  if (!choice) return;
+  backupBusy = true;
+  backupStatus('Choose where to save it…');
+  try {
+    const r = await backup.exportBackup({
+      withBooks: choice.withBooks,
+      onProgress: (i, n) => backupStatus(`Saving the backup… ${n ? Math.round((i / n) * 100) : 0}%`),
+    });
+    if (!r) { backupStatus(''); return; }
+    const what = `${r.books} ${r.books === 1 ? 'book' : 'books'}${choice.withBooks ? ` (${r.files} with ${r.files === 1 ? 'its file' : 'their files'})` : ''}`;
+    backupStatus(`Backup saved${r.where ? ` · ${r.where}` : ''} · ${what}.`);
+    toast('Backup saved');
+  } catch (err) {
+    console.error(err);
+    backupStatus(`Couldn't save the backup: ${err.message}`);
+  } finally { backupBusy = false; }
+}
+
+async function restoreBackup(file) {
+  if (backupBusy) return;
+  backupStatus('Reading the backup…');
+  let opened;
+  try { opened = await backup.readBackup(file); }
+  catch (err) { backupStatus(`Couldn't restore: ${err.message}`); return; }
+  backupStatus('');
+  const d = opened.data;
+  const when = d.createdAt ? new Date(d.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+  const withFiles = d.books.filter(b => b.bookFile).length;
+  const choice = await sheet.card({
+    title: 'Restore a backup',
+    subtitle: [when && `Made ${when}`, `${d.books.length} ${d.books.length === 1 ? 'book' : 'books'}`, d.withBooks ? `${withFiles} with ${withFiles === 1 ? 'its file' : 'their files'}` : 'without the book files'].filter(Boolean).join(' · '),
+    html: `<div class="coll-pick"><label class="check"><input type="checkbox" data-settings checked> Also restore settings <span class="muted">· look, text, sync connection</span></label></div>
+      <p class="sh-hint">Nothing here is deleted. Books you have keep their details and get anything only the backup had; the newer reading place wins; missing bookmarks, quotes and notes are added.</p>
+      <div class="sh-actions"><button class="btn" data-no>Cancel</button><button class="btn primary" data-go>Restore</button></div>`,
+    wire: (box, done) => {
+      box.querySelector('[data-no]').addEventListener('click', () => done(null));
+      box.querySelector('[data-go]').addEventListener('click', () => done({ withSettings: box.querySelector('[data-settings]').checked }));
+    },
+  });
+  if (!choice) return;
+  backupBusy = true;
+  try {
+    const r = await backup.restore(opened, {
+      withSettings: choice.withSettings,
+      onProgress: (i, n) => backupStatus(`Restoring… ${n ? Math.round((i / n) * 100) : 0}%`),
+    });
+    const parts = [];
+    if (r.added) parts.push(`${r.added} ${r.added === 1 ? 'book' : 'books'} added`);
+    if (r.matched) parts.push(`${r.matched} already here`);
+    if (r.waiting) parts.push(`${r.waiting} without ${r.waiting === 1 ? 'its file' : 'their files'} (${r.waiting === 1 ? 'it gets' : 'they get'} ${r.waiting === 1 ? 'its' : 'their'} details back when added)`);
+    if (r.places) parts.push(`${r.places} reading ${r.places === 1 ? 'place' : 'places'} brought over`);
+    if (r.marks) parts.push(`${r.marks} ${r.marks === 1 ? 'bookmark or quote' : 'bookmarks and quotes'} added`);
+    backupStatus((parts.join('; ') || 'Nothing new in that backup') + '.');
+    toast('Backup restored');
+    window.dispatchEvent(new Event('harmonarium:shelf'));
+    // Restored settings (the look, the text, sync) take hold on a fresh start.
+    if (r.settings) { backupStatus($('#s-backup-status')?.textContent + ' Restarting to apply the settings…'); setTimeout(() => location.reload(), 1800); }
+  } catch (err) {
+    console.error(err);
+    backupStatus(`Couldn't restore: ${err.message}`);
+  } finally { backupBusy = false; }
 }

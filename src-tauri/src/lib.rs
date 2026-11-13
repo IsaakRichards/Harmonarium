@@ -12,6 +12,10 @@ use std::sync::Mutex;
 #[derive(Default)]
 struct ChosenFolders(Mutex<Vec<PathBuf>>);
 
+/// The file a backup is being written to: the one the reader picked in the save dialog.
+#[derive(Default)]
+struct SaveTarget(Mutex<Option<(PathBuf, std::fs::File)>>);
+
 /// Every EPUB and PDF under `dir` (subfolders too, hidden ones and links skipped).
 #[cfg_attr(mobile, allow(dead_code))]
 fn scan_books(root: &Path, dir: &Path, depth: u32, out: &mut Vec<serde_json::Value>) {
@@ -83,6 +87,67 @@ fn read_book_file(path: String, chosen: tauri::State<'_, ChosenFolders>) -> Resu
     std::fs::read(&p).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
 }
 
+/// Ask where to save a backup and open that file: its path, or null if the reader cancelled.
+#[tauri::command]
+async fn save_begin(
+    app: tauri::AppHandle,
+    name: String,
+    target: tauri::State<'_, SaveTarget>,
+) -> Result<Option<String>, String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        let Some(picked) = app
+            .dialog()
+            .file()
+            .set_title("Save a Harmonarium backup")
+            .set_file_name(&name)
+            .add_filter("Harmonarium backup", &["zip"])
+            .blocking_save_file()
+        else {
+            return Ok(None);
+        };
+        let path = picked.into_path().map_err(|e| e.to_string())?;
+        let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+        let shown = path.to_string_lossy().into_owned();
+        *target.0.lock().map_err(|e| e.to_string())? = Some((path, file));
+        Ok(Some(shown))
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (app, name, target);
+        Err("files are saved another way on this device".into())
+    }
+}
+
+/// The next piece of the backup, sent as raw bytes.
+#[tauri::command]
+fn save_chunk(request: tauri::ipc::Request<'_>, target: tauri::State<'_, SaveTarget>) -> Result<(), String> {
+    use std::io::Write;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the file's bytes".into());
+    };
+    let mut guard = target.0.lock().map_err(|e| e.to_string())?;
+    let Some((_, file)) = guard.as_mut() else {
+        return Err("no file is being saved".into());
+    };
+    file.write_all(bytes).map_err(|e| e.to_string())
+}
+
+/// Finish the backup (keep = true), or throw the half-written file away.
+#[tauri::command]
+fn save_end(keep: bool, target: tauri::State<'_, SaveTarget>) -> Result<(), String> {
+    let taken = target.0.lock().map_err(|e| e.to_string())?.take();
+    let Some((path, file)) = taken else { return Ok(()) };
+    if keep {
+        file.sync_all().map_err(|e| e.to_string())?;
+    } else {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+    }
+    Ok(())
+}
+
 /// How this copy can update itself:
 /// "install"  the updater plugin can replace it (Windows, or Linux running as an AppImage);
 /// "page"     it was installed some other way (.deb, .rpm), so offer the releases page;
@@ -112,7 +177,15 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .manage(ChosenFolders::default())
-        .invoke_handler(tauri::generate_handler![update_mode, pick_book_folder, read_book_file]);
+        .manage(SaveTarget::default())
+        .invoke_handler(tauri::generate_handler![
+            update_mode,
+            pick_book_folder,
+            read_book_file,
+            save_begin,
+            save_chunk,
+            save_end
+        ]);
 
     #[cfg(desktop)]
     let builder = builder

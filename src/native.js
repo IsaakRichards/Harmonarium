@@ -122,3 +122,83 @@ export const updateStart = (url) => updateCall("start", `&url=${encodeURICompone
 export const updateStatus = () => updateCall("status");
 /** Opens the downloaded RPM so Sailfish offers to install it: { ok, file }. */
 export const updateOpen = () => updateCall("open");
+
+/* ---------- saving a file the app made (a backup) ----------
+   saveFile(name, mime) asks where to save (or, on Sailfish and in a browser, uses the usual
+   place) and returns a sink — { write(Uint8Array), close() → where it went, abort() } — or null
+   if the reader cancelled. The file is written chunk by chunk, so it never has to fit in memory.
+   Android: window.HarmonariumSave (src-tauri/android/HarmonariumSave.kt), the system's "save as".
+   Desktop: the Rust side's save dialog (save_begin / save_chunk / save_end in lib.rs).
+   Sailfish: the shell writes it into Documents (POST /__save, sailfish/src/localserver.cpp). */
+
+const androidSave = () => (typeof window !== "undefined" && window.HarmonariumSave) || null;
+
+function toBase64(u8) {
+  let s = "";
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+export async function saveFile(name, mime = "application/octet-stream") {
+  if (platform === "sailfish") {
+    let at = 0, file = "";
+    const post = async (body, extra = "") => {
+      const r = await fetch(`/__save?t=${encodeURIComponent(token)}&name=${encodeURIComponent(name)}&at=${at}${extra}`, { method: "POST", body });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+      return d;
+    };
+    return {
+      async write(u8) { const d = await post(u8); file = d.file || file; at += u8.length; },
+      async close() { if (!at) { const d = await post(new Uint8Array(0)); file = d.file || file; } return file || "Documents"; },
+      async abort() { await post(new Uint8Array(0), "&abort=1"); },
+    };
+  }
+  if (androidSave()) {
+    const ready = await new Promise((resolve, reject) => {
+      const on = (e) => {
+        window.removeEventListener("harmonarium:save", on);
+        const d = e.detail || {};
+        if (d.error) reject(new Error(d.error)); else resolve(d.ready ? d : null);
+      };
+      window.addEventListener("harmonarium:save", on);
+      androidSave().begin(name, mime);
+    });
+    if (!ready) return null;
+    const bridge = androidSave();
+    return {
+      async write(u8) {
+        // A little at a time across the bridge (it carries text, so Base64).
+        for (let i = 0; i < u8.length; i += 1536 * 1024) {
+          if (!bridge.write(toBase64(u8.subarray(i, Math.min(u8.length, i + 1536 * 1024))))) throw new Error("couldn't write the file");
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      },
+      async close() { if (!bridge.end()) throw new Error("couldn't finish the file"); return ready.name || name; },
+      async abort() { bridge.abort(); },
+    };
+  }
+  if (isTauri && !isAndroid) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const where = await invoke("save_begin", { name });
+    if (!where) return null;
+    return {
+      async write(u8) { await invoke("save_chunk", u8); },
+      async close() { await invoke("save_end", { keep: true }); return where; },
+      async abort() { await invoke("save_end", { keep: false }); },
+    };
+  }
+  // A browser: gather the pieces and hand them over as a download.
+  const parts = [];
+  return {
+    async write(u8) { parts.push(u8.slice()); },
+    async close() {
+      const url = URL.createObjectURL(new Blob(parts, { type: mime }));
+      const a = Object.assign(document.createElement("a"), { href: url, download: name });
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return "Downloads";
+    },
+    async abort() { parts.length = 0; },
+  };
+}

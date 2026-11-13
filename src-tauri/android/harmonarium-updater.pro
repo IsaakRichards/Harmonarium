@@ -12,3 +12,8 @@
 -keepclassmembers class com.isaakrichards.harmonarium.HarmonariumFolder {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# …and on window.HarmonariumSave (saving a backup).
+-keepclassmembers class com.isaakrichards.harmonarium.HarmonariumSave {
+    @android.webkit.JavascriptInterface <methods>;
+}

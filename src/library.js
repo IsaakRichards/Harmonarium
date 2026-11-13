@@ -11,6 +11,7 @@ import * as pdfengine from "./pdfengine.js";
 import * as sheet from "./sheet.js";
 import * as about from "./aboutbook.js";
 import * as readeraImport from "./readeraimport.js";
+import * as backup from "./backup.js";
 
 let hooks = { open: () => {}, onShelf: () => {}, listFor: () => null, onSection: () => {} };
 let remoteHints = new Map(); // bookId -> newest entry from another device
@@ -166,6 +167,9 @@ export async function importFiles(files, { quiet = false, silent = false, stats 
       };
       await db.put("books", record);
       added++;
+      // A restored backup may be waiting for this very file (its shelf details; its place and
+      // bookmarks are already stored under the same id).
+      try { await backup.applyPending(record); } catch (err) { console.warn("backup details", err); }
       // A place imported from ReadEra may be waiting for this very file.
       try { if (await readeraImport.applyPending(record, buf)) fromReadEra++; } catch (err) { console.warn("ReadEra place", err); }
     } catch (err) {

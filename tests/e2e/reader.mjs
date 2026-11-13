@@ -484,6 +484,45 @@ check("…and adds the new ones, skipping one already on the shelf", /2 books ad
 const shelfTitles = await page.evaluate(() => [...document.querySelectorAll(".lib-title")].map((t) => t.textContent));
 check("…which then sit on the shelf", shelfTitles.includes("Folder Book One") && shelfTitles.includes("Folder Book Two") && !shelfTitles.includes("Hidden Book"), shelfTitles.join(", "));
 
+// ---- Harmonarium's own backup: make one, restore it on a fresh device ------------------------
+const shelfState = (pg) => pg.evaluate(() => new Promise((res) => { const r = indexedDB.open("harmonarium"); r.onsuccess = () => {
+  const t = r.result.transaction(["books", "progress", "files"]), out = {};
+  t.objectStore("books").getAll().onsuccess = (e) => { out.books = e.target.result.map((b) => b.title).sort(); };
+  t.objectStore("progress").getAll().onsuccess = (e) => { out.places = Object.fromEntries(e.target.result.map((p) => [p.bookId, p.cfi])); };
+  t.objectStore("files").count().onsuccess = (e) => { out.files = e.target.result; };
+  t.oncomplete = () => { r.result.close(); res(out); };
+}; }));
+const shelfBefore = await shelfState(page);
+await page.click("#open-settings");
+await page.click("#s-backup-export");
+await page.waitForSelector("#sheet [data-go]");
+const [download] = await Promise.all([page.waitForEvent("download"), page.click("#sheet [data-go]")]);
+const backupFile = `${OUT}/${download.suggestedFilename()}`;
+await download.saveAs(backupFile);
+await page.waitForFunction(() => /saved|Couldn't/.test(document.getElementById("s-backup-status").textContent), null, { timeout: 30000 });
+const savedMsg = await page.textContent("#s-backup-status");
+check("A backup of the whole library is made", /Backup saved/.test(savedMsg) && new RegExp(`${shelfBefore.books.length} books`).test(savedMsg), savedMsg);
+await page.keyboard.press("Escape");
+
+const page2 = await (await browser.newContext({ viewport: { width: 412, height: 860 } })).newPage();
+page2.on("pageerror", (e) => errors.push(String(e)));
+await page2.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+await page2.goto("http://127.0.0.1:4173/");
+await page2.click("#open-settings");
+await page2.setInputFiles("#s-backup-import", backupFile);
+await page2.waitForSelector("#sheet [data-go]", { timeout: 15000 });
+await page2.click("#sheet [data-go]");
+await page2.waitForFunction(() => /added|Couldn't/.test(document.getElementById("s-backup-status")?.textContent || ""), null, { timeout: 60000 });
+const restoredMsg = await page2.textContent("#s-backup-status");
+await page2.waitForTimeout(3000); // it restarts to apply the restored settings
+const shelfAfter = await shelfState(page2);
+check("…and restoring it on a fresh device brings back every book, file and reading place",
+  JSON.stringify(shelfAfter) === JSON.stringify(shelfBefore), `${restoredMsg} · ${JSON.stringify(shelfAfter).slice(0, 300)}`);
+await page2.click('.lib-card:has-text("Test of Pages") .lib-open').catch(() => page2.click(".lib-open"));
+await page2.waitForSelector("#viewer iframe", { timeout: 15000 });
+await page2.waitForTimeout(2500);
+check("…and a restored book opens", (await page2.$$("#viewer iframe")).length > 0, await page2.textContent("#re-pages"));
+
 check("No page errors", errors.length === 0, errors.slice(0, 5).join(" | "));
 
 await writeFile(`${OUT}/results.json`, JSON.stringify({ results, errors }, null, 2));

@@ -12,6 +12,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QSysInfo>
 #include <QTcpSocket>
@@ -21,6 +22,7 @@
 namespace {
 
 const int kMaxHeaderBytes = 16 * 1024;
+const qint64 kMaxBodyBytes = 16 * 1024 * 1024; // one piece of a backup being saved
 const int kMaxBooks = 2000;
 // The updater only ever downloads release files from Harmonarium's own GitHub repository.
 const char kReleasePrefix[] = "https://github.com/IsaakRichards/Harmonarium/releases/download/";
@@ -51,6 +53,7 @@ QByteArray reason(int status)
     case 403: return "Forbidden";
     case 404: return "Not Found";
     case 405: return "Method Not Allowed";
+    case 413: return "Payload Too Large";
     default: return "Error";
     }
 }
@@ -110,26 +113,54 @@ void LocalServer::onReadyRead()
             socket->setProperty("buf", buf);
         return;
     }
+    // A request with a body (saving a backup): wait until all of it has arrived.
+    qint64 length = 0;
+    for (const QByteArray &line : buf.left(end).split('\n')) {
+        if (line.trimmed().toLower().startsWith("content-length:"))
+            length = line.trimmed().mid(15).trimmed().toLongLong();
+    }
+    if (length < 0 || length > kMaxBodyBytes) {
+        socket->setProperty("buf", QByteArray());
+        respond(socket, 413, "text/plain", "Too large");
+        return;
+    }
+    if (buf.size() < end + 4 + length) {
+        socket->setProperty("buf", buf);
+        return;
+    }
     socket->setProperty("buf", QByteArray());
     const QList<QByteArray> requestLine = buf.left(buf.indexOf("\r\n")).split(' ');
     if (requestLine.size() < 2) {
         respond(socket, 400, "text/plain", "Bad request");
         return;
     }
-    handle(socket, requestLine.at(0), requestLine.at(1));
+    handle(socket, requestLine.at(0), requestLine.at(1), buf.mid(end + 4, int(length)));
 }
 
-void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QByteArray &target)
+void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QByteArray &target,
+                         const QByteArray &body)
 {
     const bool head = method == "HEAD";
+    const QUrl url(QString::fromUtf8(target));
+    const QString path = url.path();
+    const QUrlQuery query(url);
+
+    if (method == "POST" && path == QLatin1String("/__save")) {
+        if (query.queryItemValue(QStringLiteral("t")) != m_token) {
+            respond(socket, 403, "text/plain", "Forbidden");
+            return;
+        }
+        respond(socket, 200, "application/json",
+                saveChunk(query.queryItemValue(QStringLiteral("name"), QUrl::FullyDecoded),
+                          query.queryItemValue(QStringLiteral("at")).toLongLong(),
+                          query.queryItemValue(QStringLiteral("abort")) == QLatin1String("1"), body),
+                false, true);
+        return;
+    }
     if (method != "GET" && !head) {
         respond(socket, 405, "text/plain", "Method not allowed");
         return;
     }
-
-    const QUrl url(QString::fromUtf8(target));
-    const QString path = url.path();
-    const QUrlQuery query(url);
 
     // ---- native endpoints -------------------------------------------------------------
     if (path.startsWith(QLatin1String("/__"))) {
@@ -188,6 +219,51 @@ void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QBy
         return;
     }
     respond(socket, 200, mimeFor(canonical), f.readAll(), head, canonical.endsWith(QLatin1String(".html")));
+}
+
+// Saving a backup into Documents, piece by piece: the first piece (at=0) creates the file (never
+// over an existing one), each later piece must continue exactly where the file ends.
+QByteArray LocalServer::saveChunk(const QString &name, qint64 at, bool abort, const QByteArray &body)
+{
+    auto answer = [](const QString &key, const QString &value) {
+        QJsonObject o;
+        o.insert(key, value);
+        if (key == QLatin1String("file"))
+            o.insert(QStringLiteral("ok"), true);
+        return QJsonDocument(o).toJson(QJsonDocument::Compact);
+    };
+    if (abort) {
+        if (!m_savePath.isEmpty())
+            QFile::remove(m_savePath);
+        m_savePath.clear();
+        return answer(QStringLiteral("file"), QString());
+    }
+    if (at == 0) {
+        QString clean = QFileInfo(name).fileName();
+        clean.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9._ -]")), QStringLiteral("_"));
+        if (clean.isEmpty() || clean.startsWith(QLatin1Char('.')))
+            clean = QStringLiteral("Harmonarium-backup.zip");
+        if (!clean.endsWith(QLatin1String(".zip"), Qt::CaseInsensitive))
+            clean += QStringLiteral(".zip");
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        QDir().mkpath(dir);
+        QFileInfo fi(dir + QLatin1Char('/') + clean);
+        QString path = fi.filePath();
+        for (int n = 2; QFileInfo::exists(path) && n < 1000; n++)
+            path = fi.path() + QLatin1Char('/') + fi.completeBaseName() + QStringLiteral(" (%1).").arg(n) + fi.suffix();
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly))
+            return answer(QStringLiteral("error"), QStringLiteral("Couldn't create the file in Documents"));
+        f.write(body);
+        m_savePath = path;
+        return answer(QStringLiteral("file"), path);
+    }
+    if (m_savePath.isEmpty() || QFileInfo(m_savePath).size() != at)
+        return answer(QStringLiteral("error"), QStringLiteral("The backup file went missing while being saved"));
+    QFile f(m_savePath);
+    if (!f.open(QIODevice::Append) || f.write(body) != body.size())
+        return answer(QStringLiteral("error"), QStringLiteral("Couldn't write the backup (is the storage full?)"));
+    return answer(QStringLiteral("file"), m_savePath);
 }
 
 void LocalServer::respond(QTcpSocket *socket, int status, const QByteArray &type, const QByteArray &body,
