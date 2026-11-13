@@ -202,3 +202,106 @@ export async function saveFile(name, mime = "application/octet-stream") {
     async abort() { parts.length = 0; },
   };
 }
+
+/* ---------- the folder for automatic backups ----------
+   autoBackups() → { where, begin(name) → sink, list() → [names], remove(name) }, or null where
+   there's nowhere to keep them. Only names "Harmonarium-auto-…zip" are ever written or removed.
+   Android: Downloads/Harmonarium (HarmonariumSave.kt). Desktop: Documents/Harmonarium backups
+   (lib.rs auto_*). Sailfish: Documents/Harmonarium backups (/__auto, /__save?auto=1).
+   A browser: its own private storage (OPFS). */
+
+let autoTarget;
+export function autoBackups() {
+  if (autoTarget !== undefined) return autoTarget;
+  autoTarget = makeAutoTarget();
+  return autoTarget;
+}
+
+function makeAutoTarget() {
+  if (platform === "sailfish") {
+    if (!token) return null;
+    const call = async (q) => {
+      const r = await fetch(`/__auto?t=${encodeURIComponent(token)}&${q}`, { cache: "no-store" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+      return d;
+    };
+    return {
+      where: "Documents/Harmonarium backups",
+      async begin(name) {
+        let at = 0, file = "";
+        const post = async (body, extra = "") => {
+          const r = await fetch(`/__save?t=${encodeURIComponent(token)}&auto=1&name=${encodeURIComponent(name)}&at=${at}${extra}`, { method: "POST", body });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+          return d;
+        };
+        return {
+          async write(u8) { const d = await post(u8); file = d.file || file; at += u8.length; },
+          async close() { return file; },
+          async abort() { await post(new Uint8Array(0), "&abort=1"); },
+        };
+      },
+      list: async () => (await call("op=list")).names || [],
+      remove: (name) => call(`op=remove&name=${encodeURIComponent(name)}`),
+    };
+  }
+  const bridge = androidSave();
+  if (bridge && typeof bridge.autoBegin === "function") {
+    return {
+      where: bridge.autoWhere() || "Downloads/Harmonarium",
+      async begin(name) {
+        if (!bridge.autoBegin(name)) throw new Error("couldn't create the backup in Downloads");
+        return {
+          async write(u8) {
+            for (let i = 0; i < u8.length; i += 1536 * 1024) {
+              if (!bridge.write(toBase64(u8.subarray(i, Math.min(u8.length, i + 1536 * 1024))))) throw new Error("couldn't write the backup");
+              await new Promise((r) => setTimeout(r, 0));
+            }
+          },
+          async close() { if (!bridge.end()) throw new Error("couldn't finish the backup"); return bridge.autoWhere() || "Downloads/Harmonarium"; },
+          async abort() { bridge.abort(); },
+        };
+      },
+      list: async () => { try { return JSON.parse(bridge.autoList() || "[]"); } catch { return []; } },
+      remove: async (name) => bridge.autoRemove(name),
+    };
+  }
+  if (isTauri && !isAndroid) {
+    const inv = async (cmd, args) => (await import("@tauri-apps/api/core")).invoke(cmd, args);
+    let where = "Documents/Harmonarium backups";
+    inv("auto_where").then((w) => { if (w) where = w; }).catch(() => {});
+    return {
+      get where() { return where; },
+      async begin(name) {
+        where = (await inv("auto_begin", { name })) || where;
+        return {
+          async write(u8) { await inv("save_chunk", u8); },
+          async close() { await inv("save_end", { keep: true }); return where; },
+          async abort() { await inv("save_end", { keep: false }); },
+        };
+      },
+      list: () => inv("auto_list"),
+      remove: (name) => inv("auto_remove", { name }),
+    };
+  }
+  if (isTauri) return null; // Android without the bridge
+  if (typeof navigator !== "undefined" && navigator.storage?.getDirectory) {
+    const dir = async () => (await navigator.storage.getDirectory()).getDirectoryHandle("auto-backups", { create: true });
+    return {
+      where: "this browser's storage",
+      async begin(name) {
+        const fh = await (await dir()).getFileHandle(name, { create: true });
+        const w = await fh.createWritable();
+        return {
+          async write(u8) { await w.write(u8); },
+          async close() { await w.close(); return "this browser's storage"; },
+          async abort() { try { await w.abort(); } catch { /* gone */ } try { await (await dir()).removeEntry(name); } catch { /* gone */ } },
+        };
+      },
+      async list() { const out = []; for await (const k of (await dir()).keys()) out.push(k); return out; },
+      async remove(name) { await (await dir()).removeEntry(name); },
+    };
+  }
+  return null;
+}

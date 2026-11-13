@@ -23,7 +23,9 @@ class QTcpSocket;
 //   GET /__update/start?t=TOKEN&url=…   download a Harmonarium release RPM into Downloads
 //   GET /__update/status?t=TOKEN        JSON: state, percent, file, error and this phone's arch
 //   GET /__update/open?t=TOKEN          open the downloaded RPM so Sailfish offers to install it
-//   POST /__save?t=TOKEN&name=…&at=N    save a backup into Documents, piece by piece (at = bytes so far)
+//   POST /__save?t=TOKEN&name=…&at=N    save a backup into Documents, piece by piece (at = bytes so far);
+//                                      &auto=1 writes an automatic backup into Documents/Harmonarium backups
+//   GET /__auto?t=TOKEN&op=list|remove|where&name=…   the automatic backups there
 class LocalServer : public QObject
 {
     Q_OBJECT
@@ -44,7 +46,8 @@ private slots:
 private:
     void handle(QTcpSocket *socket, const QByteArray &method, const QByteArray &target,
                 const QByteArray &body = QByteArray());
-    QByteArray saveChunk(const QString &name, qint64 at, bool abort, const QByteArray &body);
+    QByteArray saveChunk(const QString &name, qint64 at, bool abort, const QByteArray &body, bool automatic = false);
+    QByteArray autoBackups(const QString &op, const QString &name);
     void respond(QTcpSocket *socket, int status, const QByteArray &type, const QByteArray &body,
                  bool headOnly = false, bool noCache = false);
     QByteArray listBooks() const;

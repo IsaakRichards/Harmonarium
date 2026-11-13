@@ -155,9 +155,14 @@ export const fileName = (d = new Date()) =>
 export async function exportBackup({ withBooks = true, onProgress = () => {} } = {}) {
   const sink = await native.saveFile(fileName(), "application/zip");
   if (!sink) return null;
+  const books = await db.getAll("books");
+  const r = await write(sink, books, await collect(books, withBooks), onProgress);
+  return { books: books.length, ...r };
+}
+
+/** Write a backup into a sink (see native.saveFile); throws away the half-written file on error. */
+async function write(sink, books, data, onProgress = () => {}) {
   try {
-    const books = await db.getAll("books");
-    const data = await collect(books, withBooks);
     const zip = new ZipWriter(sink);
     await zip.file(DATA, enc.encode(JSON.stringify(data)));
     let files = 0;
@@ -172,11 +177,82 @@ export async function exportBackup({ withBooks = true, onProgress = () => {} } =
     }
     await zip.end();
     const where = await sink.close();
-    return { books: books.length, files, where };
+    return { files, where };
   } catch (err) {
     try { await sink.abort(); } catch { /* nothing more to do */ }
     throw err;
   }
+}
+
+/* ---------- automatic backups ----------
+   Once a day while the app is open, if anything changed since the last one, a backup goes into
+   the device's backup folder (native.autoBackups: Android Downloads/Harmonarium, desktop and
+   Sailfish Documents/Harmonarium backups, a browser its own storage). Only the newest KEEP
+   automatic backups ("Harmonarium-auto-…zip") are kept; files made by hand are never touched.
+   Settings: autoBackup (on), autoBackupBooks (off: the books themselves make each copy large). */
+
+export const KEEP = 10;
+const AUTO_EVERY = 24 * 60 * 60 * 1000;
+const AUTO_KEY = "autoBackup"; // kv: { at, sig, where, error, name }
+const AUTO_RE = /^Harmonarium-auto-\d{4}-\d{2}-\d{2}-\d{6}\.zip$/;
+const pad = (n) => String(n).padStart(2, "0");
+export const autoName = (d = new Date()) =>
+  `Harmonarium-auto-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.zip`;
+
+export const autoAvailable = () => !!native.autoBackups();
+export const autoWhere = () => native.autoBackups()?.where || "";
+export const autoState = async () => (await db.get("kv", AUTO_KEY)) || {};
+const listeners = new Set();
+export const onAuto = (fn) => listeners.add(fn);
+
+let autoRunning = null;
+/** Make an automatic backup if one is due (or `force`). Returns the new state, or null if none was made. */
+export function autoBackup({ force = false } = {}) {
+  if (!autoRunning) autoRunning = runAuto(force).finally(() => { autoRunning = null; });
+  return autoRunning;
+}
+
+async function runAuto(force) {
+  const st = settings.get() || {};
+  const target = native.autoBackups();
+  if (!target || (!force && st.autoBackup === false)) return null;
+  const prev = await autoState();
+  if (!force && prev.at && Date.now() - prev.at < AUTO_EVERY) return null;
+  const withBooks = !!st.autoBackupBooks;
+  const books = await db.getAll("books");
+  const data = await collect(books, withBooks);
+  // Nothing changed since the last one: no new copy (it would only push an older one out).
+  const sig = `${withBooks ? "b" : "n"}${crc32(enc.encode(JSON.stringify({ ...data, createdAt: 0 })))}`;
+  if (!force && sig === prev.sig) { await db.put("kv", { ...prev, at: Date.now() }, AUTO_KEY); return null; }
+  const name = autoName();
+  let state;
+  try {
+    const sink = await target.begin(name);
+    const r = await write(sink, books, data);
+    state = { at: Date.now(), sig, name, where: r.where || target.where, error: "" };
+    await prune(target);
+  } catch (err) {
+    console.warn("automatic backup", err);
+    // Try again in an hour rather than a day.
+    state = { ...prev, at: Date.now() - AUTO_EVERY + 60 * 60 * 1000, error: String(err?.message || err) };
+  }
+  await db.put("kv", state, AUTO_KEY);
+  for (const fn of listeners) try { fn(state); } catch { /* a listener's trouble */ }
+  return state;
+}
+
+/** Keep only the newest KEEP automatic backups. */
+async function prune(target) {
+  const names = (await target.list()).filter((n) => AUTO_RE.test(n)).sort();
+  for (const n of names.slice(0, Math.max(0, names.length - KEEP))) {
+    try { await target.remove(n); } catch (err) { console.warn("old backup", n, err); }
+  }
+}
+
+/** Check now, and every hour while the app stays open. */
+export function startAuto() {
+  setTimeout(() => autoBackup().catch(() => {}), 15000);
+  setInterval(() => autoBackup().catch(() => {}), 60 * 60 * 1000);
 }
 
 async function collect(books, withBooks) {

@@ -153,7 +153,8 @@ void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QBy
         respond(socket, 200, "application/json",
                 saveChunk(query.queryItemValue(QStringLiteral("name"), QUrl::FullyDecoded),
                           query.queryItemValue(QStringLiteral("at")).toLongLong(),
-                          query.queryItemValue(QStringLiteral("abort")) == QLatin1String("1"), body),
+                          query.queryItemValue(QStringLiteral("abort")) == QLatin1String("1"), body,
+                          query.queryItemValue(QStringLiteral("auto")) == QLatin1String("1")),
                 false, true);
         return;
     }
@@ -185,6 +186,13 @@ void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QBy
             }
             respond(socket, 200, file.endsWith(QLatin1String(".pdf"), Qt::CaseInsensitive) ? "application/pdf" : "application/epub+zip",
                     f.readAll(), head, true);
+            return;
+        }
+        if (path == QLatin1String("/__auto")) {
+            respond(socket, 200, "application/json",
+                    autoBackups(query.queryItemValue(QStringLiteral("op")),
+                                query.queryItemValue(QStringLiteral("name"), QUrl::FullyDecoded)),
+                    head, true);
             return;
         }
         if (path == QLatin1String("/__update/start")) {
@@ -223,7 +231,44 @@ void LocalServer::handle(QTcpSocket *socket, const QByteArray &method, const QBy
 
 // Saving a backup into Documents, piece by piece: the first piece (at=0) creates the file (never
 // over an existing one), each later piece must continue exactly where the file ends.
-QByteArray LocalServer::saveChunk(const QString &name, qint64 at, bool abort, const QByteArray &body)
+namespace {
+// Automatic backups live in Documents/Harmonarium backups; only their own names are touched.
+QString autoDir()
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+            + QStringLiteral("/Harmonarium backups");
+    QDir().mkpath(dir);
+    return dir;
+}
+bool autoNameOk(const QString &name)
+{
+    static const QRegularExpression re(QStringLiteral("^Harmonarium-auto-\\d{4}-\\d{2}-\\d{2}-\\d{6}\\.zip$"));
+    return re.match(name).hasMatch();
+}
+} // namespace
+
+QByteArray LocalServer::autoBackups(const QString &op, const QString &name)
+{
+    QJsonObject o;
+    if (op == QLatin1String("list")) {
+        QJsonArray names;
+        const QStringList found = QDir(autoDir()).entryList(QStringList() << QStringLiteral("Harmonarium-auto-*.zip"), QDir::Files, QDir::Name);
+        for (const QString &n : found)
+            if (autoNameOk(n))
+                names.append(n);
+        o.insert(QStringLiteral("names"), names);
+    } else if (op == QLatin1String("remove")) {
+        if (!autoNameOk(name) || !QFile::remove(autoDir() + QLatin1Char('/') + name))
+            o.insert(QStringLiteral("error"), QStringLiteral("Couldn't remove that backup"));
+        else
+            o.insert(QStringLiteral("ok"), true);
+    } else {
+        o.insert(QStringLiteral("where"), autoDir());
+    }
+    return QJsonDocument(o).toJson(QJsonDocument::Compact);
+}
+
+QByteArray LocalServer::saveChunk(const QString &name, qint64 at, bool abort, const QByteArray &body, bool automatic)
 {
     auto answer = [](const QString &key, const QString &value) {
         QJsonObject o;
@@ -237,6 +282,17 @@ QByteArray LocalServer::saveChunk(const QString &name, qint64 at, bool abort, co
             QFile::remove(m_savePath);
         m_savePath.clear();
         return answer(QStringLiteral("file"), QString());
+    }
+    if (at == 0 && automatic) {
+        if (!autoNameOk(name))
+            return answer(QStringLiteral("error"), QStringLiteral("Not an automatic backup's name"));
+        const QString path = autoDir() + QLatin1Char('/') + name;
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            return answer(QStringLiteral("error"), QStringLiteral("Couldn't create the backup in Documents"));
+        f.write(body);
+        m_savePath = path;
+        return answer(QStringLiteral("file"), path);
     }
     if (at == 0) {
         QString clean = QFileInfo(name).fileName();

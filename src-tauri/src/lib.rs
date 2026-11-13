@@ -148,6 +148,67 @@ fn save_end(keep: bool, target: tauri::State<'_, SaveTarget>) -> Result<(), Stri
     Ok(())
 }
 
+/// Automatic backups: Documents/Harmonarium backups (made if missing).
+#[cfg_attr(mobile, allow(dead_code))]
+fn auto_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    let base = app
+        .path()
+        .document_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| e.to_string())?;
+    let dir = base.join("Harmonarium backups");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Only automatic backups ("Harmonarium-auto-YYYY-MM-DD-HHMMSS.zip") are written or removed there.
+fn auto_name_ok(name: &str) -> bool {
+    let Some(mid) = name.strip_prefix("Harmonarium-auto-").and_then(|r| r.strip_suffix(".zip")) else {
+        return false;
+    };
+    mid.len() == 17 && mid.chars().enumerate().all(|(i, c)| if i == 4 || i == 7 || i == 10 { c == '-' } else { c.is_ascii_digit() })
+}
+
+#[tauri::command]
+fn auto_where(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(auto_dir(&app)?.to_string_lossy().into_owned())
+}
+
+/// Start an automatic backup; its pieces then go through save_chunk / save_end.
+#[tauri::command]
+fn auto_begin(app: tauri::AppHandle, name: String, target: tauri::State<'_, SaveTarget>) -> Result<String, String> {
+    if !auto_name_ok(&name) {
+        return Err("not an automatic backup's name".into());
+    }
+    let dir = auto_dir(&app)?;
+    let path = dir.join(&name);
+    let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    *target.0.lock().map_err(|e| e.to_string())? = Some((path, file));
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn auto_list(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let dir = auto_dir(&app)?;
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| auto_name_ok(n))
+        .collect();
+    names.sort();
+    Ok(names)
+}
+
+#[tauri::command]
+fn auto_remove(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    if !auto_name_ok(&name) {
+        return Err("not an automatic backup's name".into());
+    }
+    std::fs::remove_file(auto_dir(&app)?.join(name)).map_err(|e| e.to_string())
+}
+
 /// How this copy can update itself:
 /// "install"  the updater plugin can replace it (Windows, or Linux running as an AppImage);
 /// "page"     it was installed some other way (.deb, .rpm), so offer the releases page;
@@ -184,7 +245,11 @@ pub fn run() {
             read_book_file,
             save_begin,
             save_chunk,
-            save_end
+            save_end,
+            auto_where,
+            auto_begin,
+            auto_list,
+            auto_remove
         ]);
 
     #[cfg(desktop)]

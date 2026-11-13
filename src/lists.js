@@ -634,6 +634,10 @@ function renderSettings(p) {
     <p class="p-desc">Save everything Harmonarium keeps in one file: your books, shelves and collections, how far you've read, bookmarks, quotes and notes, and your settings. Restoring adds the backup to what's here and deletes nothing; where both have a reading place, the newer one wins.</p>
     <div class="row start"><button class="btn small" id="s-backup-export">Make a backup…</button><label class="btn small">Restore a backup…<input id="s-backup-import" type="file" hidden></label></div>
     <p class="status" id="s-backup-status"></p>
+    ${backup.autoAvailable() ? `<label class="check re-switch"><input id="s-autobackup" type="checkbox" role="switch"${st.autoBackup !== false ? ' checked' : ''}> <span><b>Back up automatically</b><br><small>Once a day when something has changed. The ${backup.KEEP} newest automatic backups are kept; older ones are deleted.</small></span></label>
+    <label class="check" id="s-autobackup-books-f"${st.autoBackup !== false ? '' : ' hidden'}><input id="s-autobackup-books" type="checkbox"${st.autoBackupBooks ? ' checked' : ''}> Include the books themselves <span class="muted">(each backup is then as large as your library)</span></label>
+    <p class="status" id="s-autobackup-status"></p>
+    <div class="row start"><button class="btn small" id="s-autobackup-now">Back up automatically now</button></div>` : ''}
     <hr class="sep">
     <p class="p-kicker">Import from ReadEra</p>
     <p class="p-desc">Bring over how far you've read each book. In ReadEra, make a backup (Settings → Backup &amp; restore), then choose that file here. Books that already have a place in Harmonarium keep it; books you haven't added yet get theirs when you add them.</p>
@@ -647,12 +651,17 @@ function renderSettings(p) {
     <div id="s-update"></div>${updater.available() ? '<hr class="sep">' : ''}
     <p class="via">Harmonarium ${esc(updater.currentVersion())}</p>`;
   updater.mount(p.querySelector('#s-update'));
+  showAutoStatus();
 }
 $('#panel').addEventListener('click', async e => {
   if (e.target.closest('[data-close]')) return closePanel();
   if (!panel) return;
   if (panel.kind === 'settings') {
     if (e.target.closest('#s-backup-export')) return makeBackup();
+    if (e.target.closest('#s-autobackup-now')) {
+      const out = $('#s-autobackup-status'); if (out) out.textContent = 'Backing up…';
+      return backup.autoBackup({ force: true }).then(showAutoStatus).catch(err => { if (out) out.textContent = `Couldn't back up: ${err.message}`; });
+    }
     // Only the mode buttons: <html> carries data-mode too, so a bare [data-mode] matched every click.
     const mb = e.target.closest('.mode-btn[data-mode]');
     if (mb) {
@@ -738,6 +747,12 @@ $('#panel').addEventListener('change', async e => {
         out.textContent = `Couldn't import: ${err.message}`;
       }
     }
+    else if (e.target.id === 's-autobackup') {
+      await settings.update({ autoBackup: e.target.checked });
+      $('#s-autobackup-books-f').hidden = !e.target.checked;
+      if (e.target.checked) backup.autoBackup().then(showAutoStatus).catch(() => {});
+    }
+    else if (e.target.id === 's-autobackup-books') await settings.update({ autoBackupBooks: e.target.checked });
     else if (e.target.id === 's-backup-import' && e.target.files?.[0]) {
       const file = e.target.files[0];
       e.target.value = '';
@@ -953,3 +968,21 @@ async function restoreBackup(file) {
     backupStatus(`Couldn't restore: ${err.message}`);
   } finally { backupBusy = false; }
 }
+
+/** "Last automatic backup: today at 08:50 · Downloads/Harmonarium". */
+async function showAutoStatus() {
+  const out = $('#s-autobackup-status');
+  if (!out) return;
+  const a = await backup.autoState();
+  const where = a.where || backup.autoWhere();
+  const when = a.name ? (() => {
+    const m = a.name.match(/(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})/);
+    if (!m) return '';
+    const d = new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]);
+    const day = d.toDateString() === new Date().toDateString() ? 'today' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return `${day} at ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+  })() : '';
+  out.textContent = [when ? `Last automatic backup: ${when}` : 'No automatic backup yet', where && `in ${where}`].filter(Boolean).join(' · ')
+    + (a.error ? ` · the last try failed: ${a.error}` : '');
+}
+backup.onAuto(() => showAutoStatus());

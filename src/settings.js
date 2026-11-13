@@ -24,7 +24,9 @@ const DEFAULTS = {
   brightness: 1,      // 0.2–1, a dimmer laid over the page
   keepAwake: true,    // keep the screen on while a book is open
   lightStrip: true,   // ReadEra-style reader: brightness strip under the top bar
-  section: "books",   // library section: books | docs | favorites | toread | haveread | authors | series | collections | trash
+  section: "books",
+  autoBackup: true,       // a backup a day (when something changed) into the device's backup folder, 10 kept
+  autoBackupBooks: false, //   with the books themselves in each (large)   // library section: books | docs | favorites | toread | haveread | authors | series | collections | trash
 };
 
 let current = null;

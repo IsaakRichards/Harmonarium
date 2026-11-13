@@ -9,6 +9,7 @@ import { toast } from "./util.js";
 import * as native from "./native.js";
 import * as updater from "./updater.js";
 import * as readera from "./readera.js";
+import * as backup from "./backup.js";
 
 const TAB_KEY = "hm-tab";
 
@@ -135,6 +136,7 @@ async function boot() {
   sync.flushNow(); // push reading positions left over from last time
   library.refreshRemote(false);
   updater.autoCheck(toast, () => lists.openSettings()); // Android: once a day, offers new releases
+  backup.startAuto(); // a backup a day when something changed, the 10 newest kept
 }
 
 boot();
