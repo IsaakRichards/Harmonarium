@@ -16,7 +16,7 @@ const DEFAULTS = {
   lineHeight: "",
   sort: "recent",
   keypadMode: "auto", // "auto" | "on" | "off"
-  pageTurn: "slide",  // "slide" | "fade" | "none"
+  pageTurn: "slide",  // "slide" | "curl" | "fade" | "none"
   flow: "paginated",  // "paginated" (pages) | "scrolled" (one long scroll)
   margin: "m",        // "s" | "m" | "l" | "xl" side margins
   textAlign: "auto",  // "auto" (justified in the ReadEra look) | "justify" | "left"

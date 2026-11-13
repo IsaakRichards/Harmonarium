@@ -1,13 +1,12 @@
 // Shelf tab: the EPUB and PDF files stored on this device, in ReadEra's sections:
 //   Books (EPUB) · Documents (PDF) · Favorites · To read · Have read
 //   Authors · Series · Collections (each a list of groups, then the books in one) · Trash
-import ePub from "epubjs";
 import * as db from "./db.js";
 import * as settings from "./settings.js";
 import * as sync from "./sync.js";
 import { bookIdFor, escapeHtml, pct, timeAgo, toast } from "./util.js";
 import * as native from "./native.js";
-import * as pdfengine from "./pdfengine.js";
+import * as bookinfo from "./bookinfo.js";
 import * as sheet from "./sheet.js";
 import * as about from "./aboutbook.js";
 import * as readeraImport from "./readeraimport.js";
@@ -128,10 +127,10 @@ const BOOK_FILE = /\.(epub|pdf)$/i;
 function kindOf(buf) {
   if (!buf || buf.byteLength < 8) return null;
   const b = new Uint8Array(buf, 0, Math.min(buf.byteLength, 1024));
-  if (pdfengine.isPdf("", "", buf)) return "pdf";
+  if (bookinfo.isPdf("", "", buf)) return "pdf";
   // %PDF can come after a little junk at the start
   for (let i = 0; i < b.length - 4; i++) if (b[i] === 0x25 && b[i + 1] === 0x50 && b[i + 2] === 0x44 && b[i + 3] === 0x46) return "pdf";
-  if (b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04) return "epub"; // a ZIP; epub.js checks the rest
+  if (b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04) return "epub"; // a ZIP; the reading engine checks the rest
   return null;
 }
 
@@ -159,7 +158,7 @@ export async function importFiles(files, { quiet = false, silent = false, stats 
         continue;
       }
       const pdf = kind === "pdf";
-      const meta = pdf ? await pdfengine.metadata(buf, file.name) : await readMetadata(buf.slice(0), file.name);
+      const meta = await bookinfo.metadata(buf, file.name);
       await db.put("files", buf, id);
       const record = {
         id, ...meta, format: pdf ? "pdf" : "epub", size: buf.byteLength, addedAt: Date.now(), lastOpenedAt: 0,
@@ -340,64 +339,6 @@ async function addDeviceBooks(list) {
 
 // ---------------------------------------------------------------- metadata
 
-/** Series from the package file: Calibre's calibre:series, or EPUB 3's belongs-to-collection. */
-async function seriesOf(book) {
-  try {
-    const path = book.container?.packagePath || book.packaging?.packagePath;
-    const zip = book.archive?.zip;
-    if (!path || !zip) return {};
-    const file = zip.file(path) || zip.file(path.replace(/^\//, ""));
-    const opf = file ? await file.async("string") : "";
-    const attr = (name) => {
-      const m = new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']*)["']`, "i").exec(opf)
-        || new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*name=["']${name}["']`, "i").exec(opf);
-      return m ? m[1] : "";
-    };
-    let series = attr("calibre:series"), index = attr("calibre:series_index");
-    if (!series) {
-      const c = /<meta[^>]*property=["']belongs-to-collection["'][^>]*?(?:id=["']([^"']+)["'])?[^>]*>([^<]+)<\/meta>/i.exec(opf);
-      if (c) {
-        series = c[2];
-        if (c[1]) {
-          const pos = new RegExp(`<meta[^>]*refines=["']#${c[1]}["'][^>]*property=["']group-position["'][^>]*>([^<]+)<`, "i").exec(opf);
-          if (pos) index = pos[1];
-        }
-      }
-    }
-    const decode = (s) => s.replace(/&amp;/g, "&").replace(/&apos;|&#39;/g, "'").replace(/&quot;/g, '"').trim();
-    const n = parseFloat(index);
-    return series ? { series: decode(series), seriesIndex: Number.isFinite(n) ? n : null } : {};
-  } catch { return {}; }
-}
-
-/** Close a book opened just to read it. epub.js keeps rewriting its stylesheets in the background
- *  until the book is "opened" (later than "ready"); closing before that made it fail noisily. */
-async function closeQuietly(book) {
-  try { await Promise.race([book.opened, new Promise((r) => setTimeout(r, 5000))]); } catch { /* close anyway */ }
-  try { book.destroy(); } catch { /* already gone */ }
-}
-
-async function readMetadata(buf, fallbackName) {
-  const book = ePub(buf);
-  try {
-    await book.ready;
-    const md = book.packaging?.metadata || {};
-    let cover = null;
-    try {
-      const url = await book.coverUrl();
-      if (url) cover = await (await fetch(url)).blob();
-    } catch { /* no cover */ }
-    return {
-      title: (md.title || fallbackName.replace(/\.epub$/i, "")).trim(),
-      author: (md.creator || "").trim(),
-      cover,
-      ...(await seriesOf(book)),
-    };
-  } finally {
-    await closeQuietly(book);
-  }
-}
-
 /** Books added by earlier versions: note their format and look up their series, once. */
 async function backfill() {
   try {
@@ -407,8 +348,7 @@ async function backfill() {
       if (extra.format === "epub") {
         const buf = await db.get("files", b.id);
         if (buf) {
-          const book = ePub(buf.slice(0));
-          try { await book.ready; Object.assign(extra, await seriesOf(book)); } catch { /* keep going */ } finally { await closeQuietly(book); }
+          try { Object.assign(extra, await bookinfo.seriesOf(buf)); } catch { /* keep going */ }
         }
       }
       const now = await db.get("books", b.id);

@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Harmonarium: a galaxy-themed EPUB and PDF reader and reading tracker for Android, Linux and Windows, synced through your own Google Sheet.",
   "scripts": {
+    "predev": "node scripts/copy-pdfjs.mjs",
+    "prebuild": "node scripts/copy-pdfjs.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -13,8 +15,8 @@
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --apk",
-    "build:sailfish": "vite build --outDir sailfish/www --emptyOutDir",
-    "test:reader": "vite build && node tests/e2e/reader.mjs && INSET=1 DPRS=2.625 FONTS=100,170 node tests/e2e/clip.mjs && EARLY=1 DPRS=2.625 FONTS=100,170 node tests/e2e/clip.mjs"
+    "build:sailfish": "node scripts/copy-pdfjs.mjs && vite build --outDir sailfish/www --emptyOutDir",
+    "test:reader": "npm run build && node tests/e2e/reader.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -22,9 +24,9 @@
     "@tauri-apps/plugin-opener": "^2.0.0",
     "@tauri-apps/plugin-process": "^2.0.0",
     "@tauri-apps/plugin-updater": "^2.0.0",
-    "epubjs": "^0.3.93",
-    "pdfjs-dist": "^6.2.108",
-    "jszip": "^3.10.1"
+    "construct-style-sheets-polyfill": "^3.1.0",
+    "jszip": "^3.10.1",
+    "pdfjs-dist": "^6.2.108"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

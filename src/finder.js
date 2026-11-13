@@ -1,18 +1,17 @@
 // Find in book, Go to page, and the "back" chip after a jump.
 //
-// Search runs chapter by chapter (EPUB) or page by page (PDF) and fills the results as it
-// goes; a tap on a result jumps there and marks the match. Every jump (contents, search,
+// Search is the reading engine's own (foliate-js): it runs chapter by chapter (EPUB) or page by
+// page (PDF), outlines every match in the book and fills the results as it goes; a tap on a result jumps there and marks the match. Every jump (contents, search,
 // bookmarks, quotes, go to, the slider) leaves a chip at the bottom of the page that takes
 // you back to where you were, like ReadEra's return arrow.
-import * as pdfengine from "./pdfengine.js";
 import * as sheet from "./sheet.js";
 import { escapeHtml, toast } from "./util.js";
 
 const $ = (id) => document.getElementById(id);
-let ctx = null;   // { isPdf, book, pdfDoc, display(cfi), current(), chapterFor(href), rendition(), pages() }
+let ctx = null;   // { isPdf, view(), display(at), current(), chapterFor(at), pages(), pageNow() … }
 let run = null;   // { cancelled }
 let found = null; // the CFI of the marked match
-let back = [];    // positions to return to
+let back = [];    // places to return to: { at, page }
 
 export function init() {
   $("find-form").addEventListener("submit", (e) => { e.preventDefault(); search($("find-q").value); });
@@ -26,7 +25,7 @@ export function init() {
     if (e.target.closest("[data-dismiss-back]")) { back = []; chip(); return; }
     const to = back.pop();
     chip();
-    if (to) ctx?.display(to);
+    if (to) ctx?.display(to.at);
   });
 }
 
@@ -46,7 +45,11 @@ export function open(q) {
   if (q) { $("find-q").value = q; search(q); }
   setTimeout(() => $("find-q").focus(), 30);
 }
-export function close() { $("find-panel")?.classList.add("hidden"); stop(); }
+export function close() {
+  $("find-panel")?.classList.add("hidden");
+  stop();
+  try { ctx?.view()?.clearSearch(); } catch { /* nothing outlined */ }
+}
 
 function stop() { if (run) run.cancelled = true; run = null; }
 
@@ -54,7 +57,7 @@ function stop() { if (run) run.cancelled = true; run = null; }
 export function noteJump() {
   const cur = ctx?.current();
   if (!cur?.cfi) return;
-  if (back[back.length - 1] !== cur.cfi) back.push(cur.cfi);
+  if (back[back.length - 1]?.at !== cur.cfi) back.push({ at: cur.cfi, page: ctx.pageNow?.() || 0 });
   if (back.length > 20) back.shift();
   chip();
 }
@@ -62,7 +65,7 @@ function chip() {
   const c = $("jump-back");
   if (!c) return;
   c.hidden = !back.length;
-  const n = back.length ? ctx?.pageOf?.(back[back.length - 1]) : 0;
+  const n = back.length ? back[back.length - 1].page : 0;
   $("jump-label").textContent = n ? `to page ${n}` : "Back";
 }
 
@@ -76,13 +79,13 @@ export function go(at, mark = false) {
 
 function clearMark() {
   if (!found) return;
-  try { ctx?.rendition()?.annotations.remove(found, "highlight"); } catch { /* ignore */ }
+  try { Promise.resolve(ctx?.view()?.deleteAnnotation({ value: found })).catch(() => {}); } catch { /* ignore */ }
   found = null;
 }
 function markFound(at) {
   clearMark();
   try {
-    ctx.rendition().annotations.highlight(at, {}, () => clearMark(), "hm-find", { fill: "#4fa3f7", "fill-opacity": "0.45" });
+    Promise.resolve(ctx.view().addAnnotation({ value: at, kind: "find" })).catch(() => {});
     found = at;
   } catch { /* ignore */ }
 }
@@ -107,26 +110,20 @@ async function search(query) {
   };
   $("find-status").textContent = "Searching…";
   try {
-    if (ctx.isPdf) {
-      await pdfengine.search(ctx.pdfDoc, q, {
-        signal: me,
-        onHit: (h) => add(pdfengine.pos(h.page), `Page ${h.page}`, h.excerpt.trim()),
-        onProgress: (f) => { if (run === me) $("find-status").textContent = `Searching… ${Math.round(f * 100)}%`; },
-      });
-    } else {
-      const book = ctx.book;
-      const items = book.spine.spineItems || [];
-      for (let i = 0; i < items.length; i++) {
-        if (me.cancelled) break;
-        const section = items[i];
-        try {
-          await section.load(book.load.bind(book));
-          for (const r of section.find(q)) add(r.cfi, ctx.chapterFor(section.href) || `Part ${i + 1}`, (r.excerpt || "").trim());
-        } catch { /* skip unreadable part */ }
-        try { section.unload(); } catch { /* ignore */ }
-        if (run === me) $("find-status").textContent = `Searching… ${Math.round(((i + 1) / items.length) * 100)}%`;
+    const v = ctx.view();
+    for await (const r of v.search({ query: q })) {
+      if (me.cancelled) break;
+      if (r === "done") break;
+      if (r.progress != null) { if (run === me) $("find-status").textContent = `Searching… ${Math.round(r.progress * 100)}%`; continue; }
+      if (!r.subitems) continue;
+      const where = ctx.isPdf ? `Page ${r.index + 1}` : r.label || ctx.chapterFor(r.subitems[0]?.cfi) || `Part ${r.index + 1}`;
+      for (const it of r.subitems) {
+        const ex = it.excerpt || {};
+        add(it.cfi, where, `${ex.pre || ""}${ex.match || ""}${ex.post || ""}`.replace(/\s+/g, " ").trim());
       }
     }
+  } catch (err) {
+    console.warn("search", err);
   } finally {
     if (run === me) {
       run = null;

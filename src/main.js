@@ -1,4 +1,5 @@
 // Harmonarium boot: wires the Shelf (EPUB library + reader) to the Lists (tracker).
+import "./polyfills.js"; // first: the reading engine needs these on older webviews
 import * as settings from "./settings.js";
 import * as library from "./library.js";
 import * as reader from "./reader.js";

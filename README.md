@@ -12,8 +12,8 @@ Your lists and your place in every book live in a Google Sheet that you own.</p>
 ### Shelf: read your EPUBs and PDFs
 - **Library** of the EPUBs and PDFs on this device, with covers, progress bars, search and sort. Add files with **+ Add books**, or drop them on the window on desktop. **Add a whole folder** (also under **+ Add books**, on Android, Windows, Linux and in browsers) finds every EPUB and PDF in a folder and its subfolders, counts them by format, and adds the formats you tick (EPUB by default), skipping books already on the shelf. Sailfish lists the books in your usual folders, with **Add all**.
 - **Sections, as in ReadEra:** Books (EPUB), Documents (PDF), Favorites, To read, Have read, Authors, Series (read from Calibre and EPUB 3 metadata), your own Collections, and a Trash you can restore from. Each book's **⋮** menu holds About, Favorites, To read / Have read, Collections and Move to trash. Finishing a book files it under Have read.
-- **PDFs** scroll as one column of pages fitted to the width. Tap the edges to move a screen, pinch or use **Zoom**, and the Night and Sepia themes tint the pages too. The document's outline becomes its Contents.
-- **ReadEra-style reader.** Pages turn by tapping the edges, swiping, or with the arrow keys. Wide screens show two pages side by side, and a tap in the middle hides the bars. It has a table of contents and a progress slider.
+- **PDFs** open a page at a time, fitted to the width (two side by side on wide screens), or as one long column in **Scroll** mode. Tap the edges or press ←/→ to turn, use **Zoom** to enlarge, and the Night and Sepia themes tint the pages too. The document's outline becomes its Contents, and Find searches its text.
+- **ReadEra-style reader** on **Readest's reading engine** ([foliate-js](https://github.com/readest/foliate-js)). Pages turn by tapping the edges, swiping, or with the arrow keys, with a **Slide**, **Curl** or **Fade** animation, or none. Page numbers (*227 of 1918*) belong to the book, so they stay the same whatever the text size or screen; the top bar counts the screen pages of the chapter you're in. Wide screens show two pages side by side, and a tap in the middle hides the bars. It has a table of contents and a progress slider.
 - **Text settings:** Day, Parchment, Night and Midnight themes, font size, font family (including Comfortaa, bundled so it works offline), ReadEra's **Embedded** switch (keep a book's own built-in fonts where it uses them, or replace them with yours), line spacing, margins, justified or left-aligned text, hyphenation, a brightness dimmer, **Pages** or **Scroll** mode, and keeping the screen on.
 - **Bookmarks, quotes and notes.** The bookmark at the top marks the page (a red ribbon shows it). Select text for **Copy**, **Quote** (highlighted in the book), **Note** (a quote with your words) or **Find**. Contents has tabs for Bookmarks, Quotes and Notes; tap a highlight to copy, edit or delete it.
 - **Find in book** searches every chapter (or every PDF page), and **Go to page** takes a page number or a percent. After any jump (contents, search, a bookmark, a footnote) a **Back** chip returns you to where you were.
@@ -128,7 +128,7 @@ Prefer not to install anything? The Android APK also runs under Sailfish's Andro
 
 ## Develop
 
-Harmonarium is built with [Tauri 2](https://tauri.app), Vite, plain JavaScript and [epub.js](https://github.com/futurepress/epub.js). You need Node 20+, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
+Harmonarium is built with [Tauri 2](https://tauri.app), Vite and plain JavaScript. Books are drawn by [foliate-js](https://github.com/readest/foliate-js), the reading engine of [Readest](https://github.com/readest/readest), with [pdf.js](https://mozilla.github.io/pdf.js/) for PDFs. You need Node 20+, Rust, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```sh
 npm install
@@ -146,8 +146,10 @@ src/main.js         boot, tabs, and the wiring between Shelf and Lists
 src/dpad.js         d-pad / keyboard / gamepad navigation (focus ring, reader keys)
 src/native.js       what a native shell offers the page (Sailfish: books on the device)
 src/library.js      Shelf: EPUB/PDF import (SHA-256 identity), sections, groups, book menu, collections, trash
-src/reader.js       the reader for both engines: gestures, themes, text settings, progress saving
-src/pdfengine.js    pdf.js: PDF metadata, outline, search, and the scrolling page view
+src/reader.js       the reader: opens EPUBs and PDFs in the engine; taps, themes, text settings, progress saving
+src/foliate/        the reading engine, foliate-js as Readest ships it (MIT; see its README for the version)
+src/bookinfo.js     title, author, series, cover and pages of a book, for the shelf
+src/polyfills.js    newer JavaScript the engine needs, for older webviews (Sailfish, old Android)
 src/marks.js        bookmarks, quotes and notes; the selection bar; Contents tabs
 src/finder.js       Find in book, Go to page, and the Back chip after a jump
 src/aboutbook.js    a book's About card
@@ -166,7 +168,9 @@ sailfish/           Sailfish OS app: Qt/QML WebView shell + local server, RPM sp
 - [ ] Bookmarks, highlights and notes, synced through the sheet
 - [ ] Manual linking when a shelf book's title doesn't match its list entry
 - [x] PDF support
-- [ ] Quotes and notes in PDFs (needs a text layer)
+- [ ] Quotes and notes in PDFs (the engine has a text layer now)
 - [ ] FB2, MOBI, DjVu and DOCX support
+
+The reading engine in `src/foliate/` is foliate-js by John Factotum and the Readest contributors, used under the MIT License (`src/foliate/LICENSE`).
 
 Comfortaa (`public/fonts/Comfortaa.ttf`) is by the Comfortaa Project Authors and is shipped unmodified under the SIL Open Font License 1.1 (`public/fonts/Comfortaa-OFL.txt`).

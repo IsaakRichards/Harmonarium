@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
@@ -15,6 +16,10 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
+  },
+  resolve: {
+    // The reading engine (src/foliate) loads pdf.js as "@pdfjs/pdf.min.mjs", as in Readest.
+    alias: { "@pdfjs": fileURLToPath(new URL("./node_modules/pdfjs-dist/legacy/build", import.meta.url)) },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   build: {

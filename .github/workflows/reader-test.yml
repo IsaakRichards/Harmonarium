@@ -1,7 +1,9 @@
 name: Reader test
 
-# Runs the reader with the real epub.js in headless Chromium and checks page turns frame by
-# frame (slide, finger drag, fade, none). Screenshots are kept as the run's artifact.
+# Runs the reader with its real reading engine (foliate-js) in headless Chromium: opens an EPUB
+# and a PDF, turns pages, bookmarks, quotes, searches, re-sizes and reopens. Screenshots are kept
+# as the run's artifact.
+
 on:
   push:
     branches: [main]

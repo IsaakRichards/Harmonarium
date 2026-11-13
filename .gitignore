@@ -9,3 +9,6 @@ src-tauri/gen/
 sailfish/www/
 RPMS/
 test-results/
+# pdf.js worker and data, copied from node_modules by scripts/copy-pdfjs.mjs
+public/vendor/pdfjs/*
+!public/vendor/pdfjs/*.css
