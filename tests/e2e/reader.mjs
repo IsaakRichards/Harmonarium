@@ -1,7 +1,8 @@
-// End-to-end check of the reader with the real epub.js, in headless Chromium.
+// End-to-end check of the reader with its real reading engine (foliate-js), in headless Chromium.
 //   npm run test:reader      (builds, then runs this)
-// Measures page turns frame by frame to prove they animate, and saves screenshots to
-// test-results/. Exits non-zero if any check fails.
+//   BASE_URL=http://…/  test an app already being served instead of dist/ (no server started)
+// Opens EPUBs and a PDF, turns pages, bookmarks, quotes, searches, re-sizes and reopens, and
+// saves screenshots to test-results/. Exits non-zero if any check fails.
 
 import { chromium } from "playwright";
 import { createServer } from "node:http";
@@ -31,7 +32,8 @@ const server = createServer(async (req, res) => {
     res.end(data);
   } catch { res.writeHead(404); res.end(); }
 });
-await new Promise((r) => server.listen(4173, "127.0.0.1", r));
+const BASE = process.env.BASE_URL || "http://127.0.0.1:4173/";
+if (!process.env.BASE_URL) await new Promise((r) => server.listen(4173, "127.0.0.1", r));
 
 // ---------------------------------------------------------------- a test EPUB, four chapters
 async function makeEpub() {
@@ -43,25 +45,30 @@ async function makeEpub() {
   const chapters = [1, 2, 3, 4];
   for (const n of chapters) {
     const body = Array.from({ length: 30 }, (_, i) => `<p>${n}.${i + 1} ${para(n * 31 + i)}.</p>`).join("\n");
-    zip.file(`OEBPS/ch${n}.xhtml`, `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter ${n}</title></head><body><h1>Chapter ${n}</h1>${body}</body></html>`);
+    // Chapter 1 carries scripts, inline and in a file, which the reader must never run.
+    const evil = n === 1 ? `<script>try { window.top.__bookScript = 1 } catch (e) {}</script><script src="evil.js"></script>` : "";
+    zip.file(`OEBPS/ch${n}.xhtml`, `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter ${n}</title></head><body>${evil}<h1>Chapter ${n}</h1>${body}</body></html>`);
   }
+  zip.file("OEBPS/evil.js", "try { window.top.__bookScriptFile = 1 } catch (e) {}");
   zip.file("OEBPS/nav.xhtml", `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Contents</title></head><body><nav epub:type="toc"><ol>${chapters.map((n) => `<li><a href="ch${n}.xhtml">Chapter ${n}</a></li>`).join("")}</ol></nav></body></html>`);
-  zip.file("OEBPS/content.opf", `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">harmonarium-test</dc:identifier><dc:title>The Test of Pages</dc:title><dc:creator>Harmonarium</dc:creator><dc:language>en</dc:language></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>${chapters.map((n) => `<item id="c${n}" href="ch${n}.xhtml" media-type="application/xhtml+xml"/>`).join("")}</manifest><spine>${chapters.map((n) => `<itemref idref="c${n}"/>`).join("")}</spine></package>`);
+  zip.file("OEBPS/content.opf", `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">harmonarium-test</dc:identifier><dc:title>The Test of Pages</dc:title><dc:creator>Harmonarium</dc:creator><dc:language>en</dc:language></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="evil" href="evil.js" media-type="application/javascript"/>${chapters.map((n) => `<item id="c${n}" href="ch${n}.xhtml" media-type="application/xhtml+xml"/>`).join("")}</manifest><spine>${chapters.map((n) => `<itemref idref="c${n}"/>`).join("")}</spine></package>`);
   return zip.generateAsync({ type: "nodebuffer", mimeType: "application/epub+zip" });
 }
 
 // ---------------------------------------------------------------- browser
-const browser = await chromium.launch();
+// CHROME: a Chrome to use instead of Playwright's own (handy outside CI).
+const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
 const context = await browser.newContext({ viewport: { width: 412, height: 860 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
 const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
-// Known noise: the web fonts this test blocks, and Chrome's notice about epub.js's unload listener.
-const BENIGN = [/Failed to load resource: net::ERR_FAILED/, /Permissions policy violation: unload/];
+// Known noise: the web fonts this test blocks; the engine's iframe sandbox notice; and the book
+// scripts this test plants, which the reader's policy blocks on purpose.
+const BENIGN = [/Failed to load resource/, /allow-scripts and allow-same-origin/, /Content Security Policy/];
 page.on("console", (m) => { if (m.type() === "error" && !BENIGN.some((re) => re.test(m.text()))) errors.push("console: " + m.text()); });
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 
-await page.goto("http://127.0.0.1:4173/");
+await page.goto(BASE);
 const epubBuf = await makeEpub();
 await page.setInputFiles("#file-input", { name: "test-of-pages.epub", mimeType: "application/epub+zip", buffer: epubBuf });
 await page.waitForSelector(".lib-card", { timeout: 15000 });
@@ -71,209 +78,137 @@ await page.waitForSelector("#viewer iframe", { timeout: 15000 });
 await page.waitForTimeout(1500);
 await page.evaluate(() => document.activeElement && document.activeElement.blur());
 
-const container = () => page.evaluate(() => { const c = document.querySelector("#viewer .epub-container"); return c ? { left: c.scrollLeft, width: c.offsetWidth, scrollWidth: c.scrollWidth } : null; });
-
-/** Record the container's scrollLeft on every frame while `action` runs. */
-async function sampleWhile(action, ms = 700) {
-  await page.evaluate(() => {
-    window.__s = []; window.__run = true;
-    const c = () => document.querySelector("#viewer .epub-container");
-    const tick = () => { if (!window.__run) return; const el = c(); window.__s.push({ t: performance.now(), left: el ? el.scrollLeft : null, op: getComputedStyle(document.getElementById("viewer")).opacity }); requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
-  });
-  await action();
-  await page.waitForTimeout(ms);
-  return page.evaluate(() => { window.__run = false; return window.__s; });
-}
-const distinct = (s) => new Set(s.map((x) => x.left)).size;
-const percent = () => page.innerText("#foot-percent");
+const percent = () => page.textContent("#foot-percent");
 const cfi = () => page.getAttribute("#viewer", "data-cfi");
-const chapter = () => page.innerText("#foot-chapter");
+const chapter = () => page.textContent("#foot-chapter");
+const whereNow = () => page.textContent("#re-where"); // works while the bars are hidden
+const showBars = () => page.evaluate(() => document.body.classList.remove("immersive"));
+const setSelect = (id, value) => page.evaluate(([id, value]) => { const s = document.getElementById(id); s.value = value; s.dispatchEvent(new Event("change")); }, [id, value]);
+/** Tap the page itself (the engine's frame takes taps; the edges turn, the middle toggles the bars). */
+const tapAt = (x, y = 430) => page.touchscreen.tap(x, y);
+const W = 412;
 
-// ---------------------------------------------------------------- slide (default)
-const c0 = await container();
-check("Slide mode uses a scrolling page strip", c0 && c0.scrollWidth > c0.width, JSON.stringify(c0));
+check("Books open in the reading engine (foliate-js)", await page.evaluate(() => !!document.querySelector("#viewer foliate-view")?.renderer));
+check("A book's own scripts never run", await page.evaluate(() => !window.__bookScript && !window.__bookScriptFile));
+
+// ---------------------------------------------------------------- turning pages
 const p0 = await cfi();
-let shotTaken = false;
-const s1 = await sampleWhile(async () => {
-  await page.keyboard.press("ArrowRight");
-  await page.waitForTimeout(110);
-  await page.screenshot({ path: `${OUT}/slide-mid.png` }); shotTaken = true;
+await page.keyboard.press("ArrowRight");
+await page.waitForTimeout(700);
+check("ArrowRight turns the page", (await cfi()) && (await cfi()) !== p0, `${p0} → ${await cfi()}`);
+await page.keyboard.press("ArrowLeft");
+await page.waitForTimeout(700);
+check("ArrowLeft turns back to the same page", (await cfi()) === p0, `${p0} → ${await cfi()}`);
+await tapAt(W - 20);
+await page.waitForTimeout(700);
+check("A tap at the right edge turns the page", (await cfi()) !== p0, await cfi());
+await tapAt(20);
+await page.waitForTimeout(700);
+check("A tap at the left edge turns back", (await cfi()) === p0, await cfi());
+const imm0 = await page.evaluate(() => document.body.classList.contains("immersive"));
+await tapAt(W / 2);
+await page.waitForTimeout(300);
+check("A tap in the middle shows or hides the bars", imm0 !== (await page.evaluate(() => document.body.classList.contains("immersive"))));
+await page.evaluate(() => document.body.classList.add("immersive"));
+
+async function setMode(mode) { await setSelect("page-turn", mode); await page.waitForTimeout(200); }
+check("Slide mode animates the turns", await page.evaluate(() => document.querySelector("foliate-view").renderer.hasAttribute("animated")));
+await setMode("curl");
+check("Curl mode asks the engine for its page curl", await page.evaluate(() => document.querySelector("foliate-view").renderer.getAttribute("turn-style") === "curl"));
+await setMode("fade");
+await page.evaluate(() => {
+  window.__op = []; window.__run = true;
+  const tick = () => { if (!window.__run) return; window.__op.push(Number(getComputedStyle(document.getElementById("viewer")).opacity)); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
 });
-const c1 = await container();
-check("ArrowRight slides through several in-between frames", distinct(s1) >= 6, `${distinct(s1)} distinct positions`);
-check("…and lands exactly one page on", c1.left - c0.left === c0.width, `${c0.left} → ${c1.left} (page ${c0.width})`);
-await page.waitForTimeout(200);
-check("The reading position updates after the slide", (await cfi()) && (await cfi()) !== p0, `${p0} → ${await cfi()}`);
-await page.screenshot({ path: `${OUT}/slide-after.png` });
-
-const sb = await sampleWhile(() => page.keyboard.press("ArrowLeft"));
-const cb = await container();
-check("ArrowLeft slides back", distinct(sb) >= 6 && cb.left === c0.left, `${distinct(sb)} frames, back at ${cb.left}`);
-
-const before3 = (await container()).left;
-await sampleWhile(async () => { for (let i = 0; i < 3; i++) { await page.keyboard.press("ArrowRight"); await page.waitForTimeout(60); } }, 900);
-const after3 = (await container()).left;
-check("Three quick presses chain into three pages", after3 - before3 === 3 * c0.width, `${before3} → ${after3}`);
+const pf = await cfi();
+await page.keyboard.press("ArrowRight");
+await page.waitForTimeout(600);
+const ops = await page.evaluate(() => { window.__run = false; return window.__op; });
+check("Fade mode dips the page out and back", Math.min(...ops) < 0.5 && ops[ops.length - 1] === 1, `min opacity ${Math.min(...ops)}`);
+check("…and still turns the page", (await cfi()) !== pf, `${pf} → ${await cfi()}`);
+await setMode("none");
+check("None mode turns without animation", await page.evaluate(() => !document.querySelector("foliate-view").renderer.hasAttribute("animated")));
+const pn = await cfi();
+await page.keyboard.press("ArrowRight");
+await page.waitForTimeout(400);
+check("…and turns the page", (await cfi()) !== pn);
+await setMode("slide");
 
 // cross into the next chapter
 const ch0 = await chapter();
-let crossed = false, crossFrames = 0;
+let crossed = false;
 for (let i = 0; i < 40 && !crossed; i++) {
-  const s = await sampleWhile(() => page.keyboard.press("ArrowRight"), 450);
-  if ((await chapter()) !== ch0) { crossed = true; crossFrames = distinct(s); }
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(350);
+  crossed = (await chapter()) !== ch0;
 }
-check("Slides across a chapter break", crossed, `${ch0} → ${await chapter()}`);
-check("…smoothly (animated, not a jump)", crossFrames >= 4, `${crossFrames} distinct positions on the crossing turn`);
+check("Turns across a chapter break", crossed, `${ch0} → ${await chapter()}`);
 await page.screenshot({ path: `${OUT}/after-chapter.png` });
 
-// ---------------------------------------------------------------- finger drag
-const cdp = await context.newCDPSession(page);
-const touch = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
-async function drag(fromX, toX, steps = 12, stepMs = 16) {
-  const y = 430;
-  await touch("touchStart", fromX, y);
-  for (let i = 1; i <= steps; i++) { await touch("touchMove", fromX + ((toX - fromX) * i) / steps, y); await page.waitForTimeout(stepMs); }
-}
-const d0 = (await container()).left;
-await drag(300, 160, 14, 30);           // slow drag 140px left (about a third of a page)
-const mid = (await container()).left;
-check("During a drag the page follows the finger", Math.abs((mid - d0) - 140) <= 6, `moved ${mid - d0}px for a 140px drag`);
-await page.screenshot({ path: `${OUT}/drag-mid.png` });
-await touch("touchEnd", 160, 430);
-await page.waitForTimeout(600);
-const d1 = (await container()).left;
-check("Releasing past a third of the page completes the turn", d1 - d0 === c0.width, `${d0} → ${d1}`);
-
-await drag(250, 210, 6, 40);            // short slow drag: should spring back
-await touch("touchEnd", 210, 430);
-await page.waitForTimeout(600);
-const d2 = (await container()).left;
-check("A short drag springs back", d2 === d1, `${d1} → ${d2}`);
-
-await drag(300, 240, 4, 8);             // quick flick, 60px
-await touch("touchEnd", 240, 430);
-await page.waitForTimeout(600);
-const d3 = (await container()).left;
-check("A quick flick turns the page", d3 - d2 === c0.width, `${d2} → ${d3}`);
-
-// ---------------------------------------------------------------- fade and none
-async function setMode(mode) {
-  await page.evaluate(() => document.body.classList.remove("immersive"));
-  await page.click("#re-aa");
-  await page.selectOption("#page-turn", mode);
-  await page.waitForTimeout(1200);
-  await page.click("#re-aa");
-  await page.evaluate(() => document.activeElement && document.activeElement.blur());
-}
-await setMode("fade");
-const pf = await cfi();
-const sf = await sampleWhile(() => page.keyboard.press("ArrowRight"), 600);
-const opacities = sf.map((x) => Number(x.op));
-check("Fade mode dips the page out and back", Math.min(...opacities) < 0.5 && opacities[opacities.length - 1] === 1, `min opacity ${Math.min(...opacities).toFixed(2)}`);
-check("…and still turns the page", (await cfi()) !== pf, `${pf} → ${await cfi()}`);
-
-await setMode("none");
-const n0 = await container();
-const sn = await sampleWhile(() => page.keyboard.press("ArrowRight"), 400);
-const n1 = await container();
-check("None mode turns instantly", distinct(sn) <= 3 && n1.left > n0.left, `${distinct(sn)} distinct positions, ${n0.left} → ${n1.left}`);
-
-await setMode("slide");
-const r0 = await container();
-const sr = await sampleWhile(() => page.keyboard.press("ArrowRight"));
-check("Switching back to Slide keeps the place and slides again", distinct(sr) >= 6, `${distinct(sr)} frames from ${r0.left}`);
-
 // ---------------------------------------------------------------- bookmarks, quotes, search (ReadEra's free tools)
-await page.waitForTimeout(500);
-await page.evaluate(() => document.body.classList.remove("immersive"));
+await showBars();
 await page.click("#re-bm");
 await page.waitForTimeout(400);
 check("The bookmark button bookmarks the page", await page.evaluate(() => document.getElementById("btn-bm").classList.contains("on")));
 check("…and a ribbon marks it", await page.isVisible("#bm-ribbon"));
-check("ReadEra-style top bar shows the chapter and its pages", /page \d+\/\d+/.test(await page.innerText("#re-where")), await page.innerText("#re-where"));
-check("…and the bottom bar the pages of the book", /\d+ of \d+|%/.test(await page.innerText("#re-pages")), await page.innerText("#re-pages"));
+check("ReadEra-style top bar shows the chapter and its pages", /page \d+\/\d+/.test(await whereNow()), await whereNow());
+check("…and the bottom bar the pages of the book", /\d+ of \d+/.test(await page.textContent("#re-pages")), await page.textContent("#re-pages"));
 await page.evaluate(() => document.body.classList.add("immersive"));
 await page.waitForTimeout(400);
 check("Hidden bars leave nothing over the page", !(await page.isVisible("#reader-bar")) && !(await page.isVisible("#reader-foot")) && !(await page.isVisible("#re-light")));
-await page.evaluate(() => document.body.classList.remove("immersive"));
+await showBars();
 await page.waitForTimeout(300);
 
-// Select a few words in the page: the selection bar appears, and Quote highlights them.
-const frame = page.frames().find((f) => f !== page.mainFrame() && f.url() !== "about:blank") || page.frames()[1];
-await frame.evaluate(() => {
-  const p = [...document.querySelectorAll("p")].find((el) => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().left < innerWidth && el.textContent.length > 40);
-  const t = p.firstChild;
-  const r = document.createRange();
-  r.setStart(t, 4); r.setEnd(t, 30);
-  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+const selected = await page.evaluate(() => {
+  const v = document.querySelector("foliate-view");
+  const all = v.renderer.getContents();
+  const { doc } = all.find((x) => x.index === v.renderer.primaryIndex) || all[0];
+  const p = [...doc.querySelectorAll("p")].find((el) => { const r = el.getBoundingClientRect(); return r.width && r.left >= 0; }) || doc.querySelector("p");
+  const t = p.firstChild, r = doc.createRange();
+  r.setStart(t, 0); r.setEnd(t, Math.min(40, t.length));
+  const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r);
+  return s.toString();
 });
-await page.waitForSelector("#sel-bar:not([hidden])", { timeout: 5000 }).catch(() => {});
-check("Selecting text shows the Copy / Quote / Note / Find bar", await page.isVisible("#sel-bar"));
-if (await page.isVisible("#sel-bar")) {
-  await page.click('#sel-bar [data-sel="quote"]');
-  await page.waitForTimeout(600);
-}
-check("Quote draws a highlight in the book", (await page.$$("#viewer svg .hm-hl, #viewer g.hm-hl, #viewer .hm-hl")).length > 0);
-await page.click("#re-toc");
-await page.click('[data-nav="quotes"]');
+await page.waitForTimeout(700);
+check("Selecting text shows the Copy / Quote / Note / Find bar", await page.isVisible("#sel-bar"), selected);
+await page.click("[data-sel='quote']");
+await page.waitForTimeout(800);
+const drawn = await page.evaluate(() => [...document.querySelector("foliate-view").renderer.getContents()].some((c) => c.overlayer?.element?.querySelector?.("g[fill]")));
+check("Quote draws a highlight in the book", drawn);
 check("The quote is listed under Contents → Quotes", (await page.$$("#q-list .mark-row")).length === 1);
-await page.click('[data-nav="bookmarks"]');
 check("…and the bookmark under Bookmarks", (await page.$$("#bm-list .mark-row")).length === 1);
-await page.click('[data-dismiss="toc-drawer"]');
-await page.screenshot({ path: `${OUT}/quote.png` });
 
-await page.click("#btn-find");
+await page.click("#btn-find").catch(() => page.evaluate(() => document.getElementById("btn-find").click()));
 await page.fill("#find-q", "shield wall");
 await page.press("#find-q", "Enter");
 await page.waitForFunction(() => /found|Nothing/.test(document.getElementById("find-status").textContent), null, { timeout: 20000 });
 const hits = (await page.$$("#find-results .find-hit")).length;
-check("Find in book searches every chapter", hits > 4, `${hits} hits · ${await page.innerText("#find-status")}`);
-await page.screenshot({ path: `${OUT}/find.png` });
+check("Find in book searches every chapter", hits > 4, `${hits} hits · ${await page.textContent("#find-status")}`);
 const before = await cfi();
-await page.click("#find-results .find-hit:last-child");
+await page.click("#find-results .find-hit >> nth=-1");
 await page.waitForTimeout(1200);
 check("A result jumps there", (await cfi()) !== before, `${before} → ${await cfi()}`);
 check("…leaving a Back chip", await page.isVisible("#jump-back"));
-await page.click("#jump-back button:first-child");
+await page.evaluate(() => document.getElementById("find-panel").classList.add("hidden"));
+await page.click("#jump-back button:not([data-dismiss-back])");
 await page.waitForTimeout(1200);
-check("Back returns to the page before the jump", (await page.evaluate(() => document.getElementById("btn-bm").classList.contains("on"))), await cfi());
+check("Back returns to the page before the jump", (await cfi()) === before, `${before} → ${await cfi()}`);
 
 // Scroll mode: one long scroll instead of pages.
-await page.evaluate(() => document.body.classList.remove("immersive"));
-await page.click("#re-aa");
-await page.selectOption("#flow", "scrolled");
+await setSelect("flow", "scrolled");
 await page.waitForTimeout(1500);
-await page.click("#re-aa");
-const sc = await page.evaluate(() => { const c = document.querySelector("#viewer .epub-container"); return c ? { h: c.scrollHeight, ch: c.clientHeight } : null; });
-check("Scroll mode lays the book out as one long scroll", sc && sc.h > sc.ch * 1.5, JSON.stringify(sc));
+check("Scroll mode keeps the chapter you were in", (await chapter()) && (await cfi()), `${await chapter()} · ${await cfi()}`);
+const sa = await cfi();
+await page.mouse.move(W / 2, 430);
+await page.mouse.wheel(0, 2500);
+await page.waitForTimeout(1500);
+check("Scrolling moves the reading place", (await cfi()) !== sa, `${sa} → ${await cfi()}`);
 await page.screenshot({ path: `${OUT}/scroll.png` });
-await page.click("#re-aa");
-await page.selectOption("#flow", "paginated");
+await setSelect("flow", "paginated");
 await page.waitForTimeout(1200);
-await page.click("#re-aa");
 
 // Every turn is counted, and leaving + coming back lands on the very same page.
-await page.evaluate(() => document.body.classList.remove("immersive"));
-const whereNow = () => page.textContent("#re-where"); // works while the bars are hidden
-let missed = 0; // reused below
-for (let i = 0; i < 8; i++) {
-  const before = await whereNow();
-  await page.click("#tap-next", { force: true });
-  await page.waitForTimeout(450);
-  if ((await whereNow()) === before) missed++;
-}
-check("Each page turn moves the page counter", missed === 0, `${missed} of 8 turns not counted · now ${await whereNow()}`);
-const leftAt = await cfi(), leftWhere = await whereNow();
-await page.click("#btn-back");
-await page.waitForTimeout(800);
-await page.click(".lib-open");
-await page.waitForTimeout(2500);
-check("Reopening lands on the same page", (await cfi()) === leftAt && (await whereNow()) === leftWhere, `left ${leftWhere} (${leftAt}) · back at ${await whereNow()} (${await cfi()})`);
-await page.evaluate(() => document.body.classList.remove("immersive"));
-
-// ---- Phone conditions -------------------------------------------------------------------
-const showBars = () => page.evaluate(() => document.body.classList.remove("immersive"));
 async function reopen() {
   await showBars();
   await page.click("#btn-back");
@@ -281,76 +216,95 @@ async function reopen() {
   await page.click(".lib-open");
   await page.waitForTimeout(2500);
 }
-
-// A screen that isn't a whole number of pixels wide (most Android phones): pages are fractional.
-await page.evaluate(() => { const v = document.getElementById("viewer"); v.style.right = "auto"; v.style.width = "392.73px"; window.dispatchEvent(new Event("resize")); });
-await page.waitForTimeout(1500);
-// Start a quarter of the way in, so eight turns don't run off the end of the test book.
-await page.evaluate(() => { const sl = document.getElementById("progress-slider"); sl.disabled = false; sl.value = "250"; sl.dispatchEvent(new Event("change")); });
-await page.waitForTimeout(1500);
-missed = 0;
-for (let i = 0; i < 8; i++) {
-  const before = await whereNow();
-  await page.click("#tap-next", { force: true });
+let missed = 0;
+for (let i = 0; i < 6; i++) {
+  const b = await cfi();
+  await page.keyboard.press("ArrowRight");
   await page.waitForTimeout(450);
-  if ((await whereNow()) === before) missed++;
+  if ((await cfi()) === b) missed++;
 }
-check("On a fractional-width screen each turn moves the counter", missed === 0, `${missed} of 8 not counted · now ${await whereNow()}`);
-await page.click("#jump-back [data-dismiss-back]").catch(() => {});
-let at = await cfi(), atWhere = await whereNow();
+check("Each page turn moves the reading place", missed === 0, `${missed} of 6 turns not counted · now ${await whereNow()}`);
+const leftAt = await cfi(), leftWhere = await whereNow();
 await reopen();
-check("…and reopening lands on the same page", (await cfi()) === at && (await whereNow()) === atWhere, `left ${atWhere} · back at ${await whereNow()}`);
+check("Reopening lands on the same page", (await cfi()) === leftAt && (await whereNow()) === leftWhere, `left ${leftWhere} (${leftAt}) · back at ${await whereNow()} (${await cfi()})`);
 
-// Android's back gesture: a swipe from the left edge starts dragging the page, then the system
-// takes the touch away (touchcancel) and closes the book.
-for (let i = 0; i < 3; i++) { await page.click("#tap-next", { force: true }); await page.waitForTimeout(450); }
-at = await cfi(); atWhere = await whereNow();
-await page.evaluate(async () => {
-  const el = document.getElementById("tap-prev");
-  const mk = (x) => new Touch({ identifier: 7, target: el, clientX: x, clientY: 400, screenX: x, screenY: 400, pageX: x, pageY: 400 });
-  const fire = (type, x) => el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === "touchcancel" ? [] : [mk(x)], changedTouches: [mk(x)] }));
-  fire("touchstart", 4);
-  for (const x of [20, 45, 80, 120]) { fire("touchmove", x); await new Promise((r) => setTimeout(r, 16)); }
-  fire("touchcancel", 120);
-});
-await page.waitForTimeout(200);
+// ---- Phone conditions -------------------------------------------------------------------
+// Rotating, Android's bars hiding, split screen: the frame changes size again and again.
+let at = await cfi();
+for (const [w, h] of [[860, 412], [412, 860], [400, 820], [412, 860]]) {
+  await page.setViewportSize({ width: w, height: h });
+  await page.waitForTimeout(700);
+}
+await page.waitForTimeout(800);
+check("Screen re-sizes don't drift the saved place", (await cfi()) === at, `${at} → ${await cfi()}`);
 await reopen();
-check("A back swipe from the edge doesn't lose a page", (await cfi()) === at && (await whereNow()) === atWhere, `left ${atWhere} · back at ${await whereNow()}`);
+check("…and reopening still lands on it", (await cfi()) === at, `${at} → ${await cfi()}`);
 
-// The status bar hiding and showing (the screen grows and shrinks) re-flows the pages.
-await page.evaluate(() => { const v = document.getElementById("viewer"); v.style.right = ""; v.style.width = ""; window.dispatchEvent(new Event("resize")); });
-await page.waitForTimeout(1200);
-for (let i = 0; i < 2; i++) { await page.click("#tap-next", { force: true }); await page.waitForTimeout(450); }
-at = await cfi(); atWhere = await whereNow();
-for (const h of [900, 860, 900, 860]) { await page.setViewportSize({ width: 412, height: h }); await page.waitForTimeout(700); }
-await reopen();
-check("Screen re-sizes don't drift the saved place", (await cfi()) === at, `left ${atWhere} (${at}) · back at ${await whereNow()} (${await cfi()})`);
-await showBars();
-
-// Text size: bigger letters re-flow the chapter (more pages), but the place you were reading
-// stays on screen and stays the saved place; going back to the old size shows the same page.
-for (let i = 0; i < 2; i++) { await page.click("#tap-next", { force: true }); await page.waitForTimeout(450); }
-// Step back from any chapter's first page, so the place is mid-chapter.
-await page.click("#tap-prev", { force: true }); await page.waitForTimeout(450);
-at = await cfi(); atWhere = await whereNow();
-await showBars();
-await page.click("#re-aa");
-await page.click("#font-inc"); await page.waitForTimeout(900);
-await page.click("#font-inc"); await page.waitForTimeout(900);
+// Bigger text: more pages in the chapter, and the same place.
+const smallWhere = await whereNow();
+await page.evaluate(() => { document.getElementById("font-inc").click(); document.getElementById("font-inc").click(); document.getElementById("font-inc").click(); });
+await page.waitForTimeout(1500);
 const bigWhere = await whereNow(), bigCfi = await cfi();
-await page.click("#font-dec"); await page.waitForTimeout(900);
-await page.click("#font-dec"); await page.waitForTimeout(900);
-await page.click("#re-aa");
-check("Bigger text keeps your place as the saved place", bigCfi === at, `${atWhere} → ${bigWhere} (${bigCfi})`);
-check("…and the old size shows the same page again", (await whereNow()) === atWhere && (await cfi()) === at, `${atWhere} → ${await whereNow()}`);
+check("Bigger text lays the chapter out on more pages", bigWhere !== smallWhere, `${smallWhere} → ${bigWhere}`);
+check("…and keeps your place as the saved place", bigCfi === at, `${at} → ${bigCfi}`);
+await page.evaluate(() => { document.getElementById("font-dec").click(); document.getElementById("font-dec").click(); document.getElementById("font-dec").click(); });
+await page.waitForTimeout(1500);
+check("…and the old size shows the same page again", (await whereNow()) === smallWhere && (await cfi()) === at, `${smallWhere} → ${await whereNow()}`);
 await reopen();
-check("…and reopening after a size change lands on it", (await cfi()) === at && (await whereNow()) === atWhere, `${atWhere} → ${await whereNow()}`);
-await showBars();
+check("…and reopening after a size change lands on it", (await cfi()) === at, `${at} → ${await cfi()}`);
 
-// Library sections: the EPUB is under Books, and Favorites starts empty.
-await page.evaluate(() => document.body.classList.remove("immersive"));
+// A place saved by the old engine (epub.js wrote the spine item's id into its CFIs) still opens.
+await showBars();
 await page.click("#btn-back");
 await page.waitForTimeout(600);
+const oldId = await page.getAttribute(".lib-card", "data-id");
+await page.evaluate((id) => new Promise((res) => {
+  const r = indexedDB.open("harmonarium");
+  r.onsuccess = () => {
+    const st = r.result.transaction("progress", "readwrite").objectStore("progress");
+    const g = st.get(id);
+    g.onsuccess = () => { st.put({ ...g.result, cfi: "epubcfi(/6/6[c3]!/4/2/1:0)" }); st.transaction.oncomplete = () => { r.result.close(); res(); }; };
+  };
+}), oldId);
+await page.click(".lib-open");
+await page.waitForTimeout(2500);
+check("A place saved by the old reading engine still opens there", (await chapter()) === "Chapter 3", `${await cfi()} · ${await chapter()}`);
+await showBars();
+
+// ---- PDFs: the same engine, a page at a time --------------------------------------------
+await page.click("#btn-back");
+await page.waitForTimeout(600);
+const pdfPage = await context.newPage();
+await pdfPage.setContent(`<html><body style="font:16px serif">${[1, 2, 3, 4].map((n) => `<h1 style="page-break-before:always">Part ${n}</h1><p>${"words on a page ".repeat(80)}</p>`).join("")}</body></html>`);
+const pdfBuf = await pdfPage.pdf({ format: "A5" });
+await pdfPage.close();
+await page.setInputFiles("#file-input", { name: "Pages of a Document.pdf", mimeType: "application/pdf", buffer: pdfBuf });
+await page.waitForFunction(() => [...document.querySelectorAll(".lib-fmt")].some((t) => t.textContent.startsWith("PDF")), null, { timeout: 20000 }).catch(() => {});
+await page.selectOption("#lib-section", "documents").catch(() => {});
+await page.waitForTimeout(500);
+const pdfCard = page.locator(".lib-card", { hasText: "Pages of a Document" });
+check("A PDF imports onto the shelf", (await pdfCard.count()) === 1, await page.innerText("#library").catch(() => ""));
+await pdfCard.locator(".lib-open").click();
+await page.waitForSelector("#viewer iframe", { timeout: 20000, state: "attached" });
+await page.waitForTimeout(2500);
+check("A PDF opens on its first page", (await cfi()) === "pdf:1:0.000", await cfi());
+await page.keyboard.press("ArrowRight");
+await page.waitForTimeout(1200);
+check("…turns to the next page", (await cfi()) === "pdf:2:0.000", await cfi());
+await showBars();
+await page.click("#zoom-inc").catch(() => page.evaluate(() => document.getElementById("zoom-inc").click()));
+check("…zooms", (await page.textContent("#zoom-label")) === "120%", await page.textContent("#zoom-label"));
+await page.evaluate(() => document.getElementById("zoom-fit").click());
+await page.screenshot({ path: `${OUT}/pdf.png` });
+const pdfAt = await cfi();
+await reopen(); // the shelf still shows Documents, so this opens the PDF again
+check("…and reopens on the page you left", (await page.isVisible("#view-reader")) && (await cfi()) === pdfAt, `${pdfAt} → ${await cfi()}`);
+await showBars();
+await page.click("#btn-back");
+await page.waitForTimeout(600);
+await page.selectOption("#lib-section", "books");
+await page.waitForTimeout(400);
+// Library sections: the EPUB is under Books (the PDF under Documents), and Favorites starts empty.
 check("The EPUB sits in Books", (await page.$$(".lib-card")).length === 1 && (await page.innerText(".lib-fmt")).startsWith("EPUB"));
 await page.selectOption("#lib-section", "favorites");
 await page.waitForTimeout(400);
@@ -507,7 +461,7 @@ await page.keyboard.press("Escape");
 const page2 = await (await browser.newContext({ viewport: { width: 412, height: 860 } })).newPage();
 page2.on("pageerror", (e) => errors.push(String(e)));
 await page2.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-await page2.goto("http://127.0.0.1:4173/");
+await page2.goto(BASE);
 await page2.click("#open-settings");
 await page2.setInputFiles("#s-backup-import", backupFile);
 await page2.waitForSelector("#sheet [data-go]", { timeout: 15000 });
@@ -527,7 +481,7 @@ check("No page errors", errors.length === 0, errors.slice(0, 5).join(" | "));
 
 await writeFile(`${OUT}/results.json`, JSON.stringify({ results, errors }, null, 2));
 await browser.close();
-server.close();
+if (!process.env.BASE_URL) server.close();
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

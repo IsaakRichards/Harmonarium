@@ -8,23 +8,20 @@
 // The reader hands in a small context (see load()); this module owns the selection bar,
 // the highlights, the bookmark button and the Bookmarks / Quotes / Notes tabs of the
 // navigation panel.
-import ePub from "epubjs";
+import * as CFI from "./foliate/epubcfi.js";
 import * as db from "./db.js";
 import * as sheet from "./sheet.js";
 import { escapeHtml, pct, toast, uuid } from "./util.js";
 
 const $ = (id) => document.getElementById(id);
-const HL = { fill: "#ffd54f", "fill-opacity": "0.42", "mix-blend-mode": "multiply" };
-const HL_NIGHT = { fill: "#ffd54f", "fill-opacity": "0.28" };
-
-let ctx = null;   // { bookId, isPdf, rendition(), book, pdf(), current(), jump(cfi), chapterFor(cfi|page), night() }
+let ctx = null;   // { bookId, isPdf, view(), current(), location(), jump(at), chapterFor(at), night(), pdfPos(page) … }
 let marks = [];
-let loc = null;   // last relocation: { start, end } CFIs, or { page } for PDFs
+let loc = null;   // foliate's last location: { cfi (the visible range), section: { current } … }
 let selection = null; // { cfiRange, text, contents }
-const cfi = (() => { try { return new ePub.CFI(); } catch { return null; } })();
+const drawn = new Set(); // CFIs of the highlights handed to the engine
 
 function cmp(a, b) {
-  try { return cfi.compare(a, b); } catch { return 0; }
+  try { return CFI.compare(a, b); } catch { return 0; }
 }
 
 // ------------------------------------------------------------------ setup
@@ -51,6 +48,7 @@ export async function load(c) {
 
 export function unload() {
   hideSelection();
+  drawn.clear();
   ctx = null;
   marks = [];
   loc = null;
@@ -62,29 +60,35 @@ export function unload() {
 const quotes = () => marks.filter((m) => m.kind === "quote");
 const bookmarks = () => marks.filter((m) => m.kind === "bookmark");
 
-/** Draw every saved quote into the book (again after the rendition is rebuilt). */
+/** Hand every saved quote to the engine; it draws each one whenever its chapter is on screen. */
 export function applyHighlights() {
   if (!ctx || ctx.isPdf) return;
-  const r = ctx.rendition();
-  if (!r) return;
   for (const q of quotes()) highlight(q);
 }
 
 function highlight(q) {
-  const r = ctx?.rendition();
-  if (!r || !q.cfi) return;
-  try { r.annotations.remove(q.cfi, "highlight"); } catch { /* not there yet */ }
-  try {
-    r.annotations.highlight(q.cfi, { id: q.id }, () => openQuote(q.id), q.note ? "hm-hl hm-note" : "hm-hl", ctx.night() ? HL_NIGHT : HL);
-  } catch (err) { console.warn("highlight", err); }
+  const v = ctx?.view();
+  if (!v || !q.cfi || ctx.isPdf) return;
+  drawn.add(q.cfi);
+  Promise.resolve(v.addAnnotation({ value: q.cfi, kind: "quote", id: q.id })).catch((err) => console.warn("highlight", err));
 }
 
-/** The theme changed between day and night: redraw highlights so they read on either. */
-export function retint() { applyHighlights(); }
+function unhighlight(q) {
+  const v = ctx?.view();
+  if (!v || !q?.cfi || ctx.isPdf) return;
+  drawn.delete(q.cfi);
+  Promise.resolve(v.deleteAnnotation({ value: q.cfi })).catch(() => {});
+}
+
+/** A tap on a highlight in the book (foliate's show-annotation). */
+export function onAnnotationTap(value) {
+  const q = quotes().find((m) => m.cfi === value);
+  if (q) openQuote(q.id);
+}
 
 // ------------------------------------------------------------------ bookmarks
 
-/** The reader moved. `l` is epub.js's location, or { page } for a PDF. */
+/** The reader moved. `l` is foliate's location. */
 export function onRelocated(l) {
   loc = l;
   hideSelection();
@@ -97,8 +101,12 @@ export function onRelocated(l) {
 
 function bookmarkHere() {
   if (!loc) return null;
-  if (ctx?.isPdf) return bookmarks().find((b) => Number(String(b.cfi).split(":")[1]) === loc.page) || null;
-  const s = loc.start?.cfi, e = loc.end?.cfi;
+  if (ctx?.isPdf) {
+    const page = (loc.section?.current ?? 0) + 1;
+    return bookmarks().find((b) => Number(String(b.cfi).split(":")[1]) === page) || null;
+  }
+  let s = null, e = null;
+  try { s = CFI.collapse(loc.cfi); e = CFI.collapse(loc.cfi, true); } catch { return null; }
   if (!s) return null;
   return bookmarks().find((b) => b.cfi === s || (cmp(b.cfi, s) >= 0 && e && cmp(b.cfi, e) <= 0)) || null;
 }
@@ -114,7 +122,7 @@ export async function toggleBookmark() {
     if (!cur) return;
     const m = {
       id: uuid(), bookId: ctx.bookId, kind: "bookmark",
-      cfi: ctx.isPdf ? `pdf:${loc?.page || 1}:0.000` : cur.cfi,
+      cfi: ctx.isPdf ? ctx.pdfPos((loc?.section?.current ?? 0) + 1) : cur.cfi,
       text: await snippet(), chapter: cur.chapter || "", percent: cur.percent || 0, createdAt: Date.now(),
     };
     await save(m);
@@ -126,8 +134,7 @@ export async function toggleBookmark() {
 /** The first words on the current page. */
 async function snippet() {
   try {
-    if (ctx.isPdf) return await ctx.pdfSnippet(loc?.page || 1);
-    const r = ctx.rendition().getRange(loc.start.cfi);
+    const r = loc?.range;
     if (!r) return "";
     const doc = r.startContainer.ownerDocument;
     const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
@@ -140,7 +147,7 @@ async function snippet() {
 
 // ------------------------------------------------------------------ selection → quote
 
-/** epub.js "selected": show the bar over the selection. */
+/** Text was selected in the book: show the bar over the selection. */
 export function onSelected(cfiRange, contents) {
   if (!ctx) return;
   const sel = contents.window.getSelection();
@@ -201,14 +208,8 @@ async function selAction(what) {
   }
 }
 
+/** A quote sits on the page you're reading, so it takes that page's place in the book. */
 function percentOf(range, cur) {
-  try {
-    const book = ctx.book;
-    if (book?.locations?.length()) {
-      const start = range.replace(/^epubcfi\((.*?),(.*?),.*\)$/, "epubcfi($1$2)");
-      return book.locations.percentageFromCfi(start);
-    }
-  } catch { /* fall through */ }
   return cur?.percent || 0;
 }
 
@@ -241,10 +242,9 @@ async function openQuote(id) {
     const note = await sheet.ask({ title: "Note", value: q.note || "", multiline: true, placeholder: "Your note", ok: "Save" });
     if (note === null) return;
     await save({ ...q, note });
-    highlight(marks.find((m) => m.id === id));
   } else if (choice === "delete") {
     await remove(id);
-    try { ctx.rendition()?.annotations.remove(q.cfi, "highlight"); } catch { /* ignore */ }
+    unhighlight(q);
     toast(q.note ? "Note deleted" : "Quote deleted", async () => { await save(q); highlight(q); });
   }
 }
@@ -296,7 +296,7 @@ async function onListClick(e) {
   if (!m) return;
   if (e.target.closest("[data-x]")) {
     await remove(m.id);
-    if (m.kind === "quote") try { ctx.rendition()?.annotations.remove(m.cfi, "highlight"); } catch { /* ignore */ }
+    if (m.kind === "quote") unhighlight(m);
     onRelocated(loc);
     toast("Deleted", async () => { await save(m); if (m.kind === "quote") highlight(m); onRelocated(loc); });
     return;

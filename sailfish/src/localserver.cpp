@@ -42,6 +42,7 @@ QByteArray mimeFor(const QString &path)
     if (ext == QLatin1String("woff")) return "font/woff";
     if (ext == QLatin1String("epub")) return "application/epub+zip";
     if (ext == QLatin1String("pdf")) return "application/pdf";
+    if (ext == QLatin1String("wasm")) return "application/wasm";
     return "application/octet-stream";
 }
 

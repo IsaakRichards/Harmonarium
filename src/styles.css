@@ -846,7 +846,7 @@ html[data-re-reader] #btn-toc, html[data-re-reader] #btn-aa, html[data-re-reader
 html[data-re-reader] #progress-slider { accent-color: var(--re-accent); }
 
 html[data-re-reader] #viewer {
-  /* the page fills the screen; epub.js's gap (reader.js pageGap) gives the slim side margins */
+  /* the page fills the screen; the engine's side margins (reader.js pageGap) are the slim ones */
   inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 html[data-re-reader] .tap-zone { width: 30%; }
@@ -973,21 +973,15 @@ body.pdf-mode .aa-pdf { display: flex; }
 body.pdf-mode .aa-epub { display: none; }
 .aa-panel { max-height: min(80vh, 640px); overflow-y: auto; }
 
-/* PDF: pages stacked down a scroll, fitted to the width */
-body.pdf-mode .tap-zone, body.flow-scroll .tap-zone { display: none; }
+/* The reading engine (foliate-js, src/foliate): one <foliate-view> fills the page. Taps and
+   swipes go to the page itself (reader.js onPageClick), so the edge zones step aside. */
+#viewer foliate-view { display: block; width: 100%; height: 100%; }
+body.foliate .tap-zone { display: none; }
 body.pdf-mode #viewer { inset: 0; }
-.pdf-scroll { position: absolute; inset: 0; overflow: auto; -webkit-overflow-scrolling: touch; outline: none; overscroll-behavior: contain; }
-.pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0 40px; min-width: 100%; width: max-content; margin: 0 auto; }
-.pdf-pages:not(.zoomed) { width: 100%; }
-.pdf-page { position: relative; flex: none; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25); }
-.pdf-page:not(.ready)::after { content: attr(data-n); position: absolute; inset: 0; display: grid; place-items: center; color: #bbb; font: 500 18px var(--body); }
-.pdf-page canvas { display: block; width: 100%; height: 100%; }
-body[data-rtheme="sepia"] .pdf-page { background: #f4ecd8; }
-body[data-rtheme="sepia"] .pdf-page canvas { filter: sepia(0.45) contrast(0.95); }
-body[data-rtheme="dark"] .pdf-page { background: #000; }
-body[data-rtheme="dark"] .pdf-page canvas { filter: invert(1) hue-rotate(180deg) brightness(0.92); }
-body[data-rtheme="black"] .pdf-page { background: #000; }
-body[data-rtheme="black"] .pdf-page canvas { filter: invert(1) hue-rotate(180deg) brightness(0.8); }
+/* PDFs keep their own colours; Sepia and the night themes tint the page images. */
+body.pdf-mode[data-rtheme="sepia"] foliate-view::part(filter) { filter: sepia(0.45) contrast(0.95); }
+body.pdf-mode[data-rtheme="dark"] foliate-view::part(filter) { filter: invert(1) hue-rotate(180deg) brightness(0.92); }
+body.pdf-mode[data-rtheme="black"] foliate-view::part(filter) { filter: invert(1) hue-rotate(180deg) brightness(0.8); }
 
 /* modal sheets (src/sheet.js) */
 .sheet-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.45); }

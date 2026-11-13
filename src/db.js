@@ -5,7 +5,7 @@
 //   books     – metadata: { id, title, author, cover (Blob|null), size, addedAt, lastOpenedAt }
 //   files     – raw EPUB bytes keyed by book id
 //   progress  – local reading position: { bookId, cfi, percent, chapter, updatedAt }
-//   locations – epub.js generated location index (JSON string) keyed by book id
+//   locations – (no longer used: page counts came from epub.js; the reading engine now works them out itself)
 //   outbox    – progress entries waiting to be pushed to the sheet, keyed by book id
 //   kv        – settings and misc values
 //   marks     – bookmarks and quotes (a quote with a note is a note):

@@ -1,11 +1,17 @@
-import ePub from "epubjs";
+// The reader. Books are drawn by foliate-js, the reading engine inside Readest (see
+// src/foliate/README.md): EPUBs by its paginator, PDFs by its fixed-layout renderer with pdf.js.
+//
+// Places are stored as before, so old saves, backups, synced places and other devices still agree:
+//   EPUB  an EPUB CFI, e.g. "epubcfi(/6/14!/4/2/1:0)"
+//   PDF   "pdf:<page>:<fraction of that page>", e.g. "pdf:12:0.000"
+import "./foliate/view.js";
+import { Overlayer } from "./foliate/overlayer.js";
+import * as CFI from "./foliate/epubcfi.js";
 import * as db from "./db.js";
 import * as settings from "./settings.js";
 import * as sync from "./sync.js";
 import { escapeHtml, pct, timeAgo, toast } from "./util.js";
-import * as pageturn from "./pageturn.js";
 import * as readera from "./readera.js";
-import * as pdfengine from "./pdfengine.js";
 import * as marks from "./marks.js";
 import * as finder from "./finder.js";
 import * as about from "./aboutbook.js";
@@ -18,37 +24,35 @@ const THEMES = {
   black: { bg: "#000000", fg: "#bdbab3", link: "#9db4ff" },
 };
 const MARGIN = { s: 0.55, m: 1, l: 1.7, xl: 2.6 };
+export const TURNS = ["slide", "curl", "fade", "none"];
 
-let book = null;      // epub.js Book
-let rendition = null; // epub.js Rendition
-let pdfDoc = null;    // pdf.js document
-let pdfView = null;   // pdfengine view
+let view = null;      // the <foliate-view> element
 let meta = null;      // our stored book record
-let toc = [];         // flattened table of contents: { label, href | page, depth }
+let pdf = false;      // is the open book a PDF?
+let toc = [];         // flattened table of contents: { label, href, depth, index }
 let current = null;   // { cfi, percent, chapter }
 let lastSavedCfi = null;
 let holdSaves = false; // true while we check the sheet on open
 let initialCfi = null; // where the book first landed, so merely opening never counts as reading
-// The page you're reading, as you reached it. Re-laying the book out (opening it, the phone's bars
-// hiding, rotating, a font or picture loading late, changing the text size) re-flows the pages, and
-// epub.js then reports the start of whichever page now holds your place, which begins a little
-// earlier. Saving that and reopening drifted you back a bit more each time. So until you turn a
-// page yourself, the anchor stays put: it's what gets saved, and the book is kept showing it.
+// A place reached by opening the book or from another device is kept exactly as it was until you
+// turn a page yourself: the page that holds it here starts a little earlier, and saving that start
+// would walk two devices backwards through the book. (foliate-js itself keeps the page steady
+// through re-layouts, so this is the only anchoring left to do.)
 let anchorCfi = null;
-let anchored = false;  // true while the page shown is the result of a re-layout, not of your turning
-let anchorTimer = 0;
-const cfiCmp = (() => { const c = new ePub.CFI(); return (a, b) => { try { return c.compare(a, b); } catch { return 0; } }; })();
+let anchored = false;
 let pendingRemote = null;
 let hooks = { close: () => {}, onFinished: () => {}, onKey: () => {}, onBookChanged: () => {} };
 let finishOffered = false;
-let turner = null;     // page-turn animator (pageturn.js)
 let tocIndex = -1;     // the contents entry for the current page
 let wakeLock = null;
 let chapterPages = null; // { page, total } within the current chapter
+let loc = null;          // foliate's last location: { fraction, location, section, tocItem, cfi, range }
+let pdfZoom = 1;         // 1 = fit the page's width
+let annotationTapAt = 0; // a tap on a highlight opens it instead of bringing the bars up
 
 const NIGHT = new Set(["dark", "black"]);
-const isPdf = () => !!pdfView;
 const scrolled = () => settings.get().flow === "scrolled";
+const turnMode = () => (TURNS.includes(settings.get().pageTurn) ? settings.get().pageTurn : "slide");
 
 /** Theme names; the ReadEra look uses ReadEra's own (Day, Sepia, Night, Console). */
 function themeName(t) {
@@ -65,6 +69,7 @@ function nameSwatches() {
 }
 
 const $ = (id) => document.getElementById(id);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function init(h) {
   hooks = { ...hooks, ...h };
@@ -79,38 +84,35 @@ export function init(h) {
   $("re-aa").addEventListener("click", () => toggle("aa-panel"));
   $("re-daynight").addEventListener("click", () => dayNight());
   nameSwatches();
-  window.addEventListener("harmonarium:readera", () => { nameSwatches(); applyUserStyle(); relayout(); });
+  window.addEventListener("harmonarium:readera", () => { nameSwatches(); applyStyles(); applyLayout(); });
   for (const b of document.querySelectorAll("[data-dismiss]")) {
     b.addEventListener("click", () => $(b.dataset.dismiss).classList.add("hidden"));
   }
   // Navigation panel tabs: Contents, Bookmarks, Quotes, Notes.
   for (const t of document.querySelectorAll("[data-nav]")) t.addEventListener("click", () => navTab(t.dataset.nav));
 
-  // Edge tap zones: tap to turn; on touch they also let you drag the page from the edge.
+  // The page itself takes taps and swipes (see onLoad); these edge zones stay out of its way and
+  // only answer a click that somehow lands on them.
   for (const [id, dir] of [["tap-prev", -1], ["tap-next", 1]]) {
-    const z = $(id);
-    z.addEventListener("click", () => { marks.hideSelection(); turn(dir); });
-    z.addEventListener("touchstart", (e) => turner?.touch.start(e), { passive: true });
-    z.addEventListener("touchmove", (e) => turner?.touch.move(e), { passive: true });
-    z.addEventListener("touchend", (e) => turner?.touch.end(e), { passive: true });
-    z.addEventListener("touchcancel", () => turner?.touch.cancel(), { passive: true });
+    $(id).addEventListener("click", () => { marks.hideSelection(); turn(dir); });
   }
   // Mouse wheel / trackpad on desktop turns pages too.
   $("viewer-wrap").addEventListener("wheel", onWheel, { passive: true });
   $("page-turn").addEventListener("change", async (e) => {
     await settings.update({ pageTurn: e.target.value });
-    if (rendition) await rebuild();
+    applyLayout();
   });
   $("flow").addEventListener("change", async (e) => {
     await settings.update({ flow: e.target.value });
     syncPanelState();
-    if (rendition) await rebuild();
+    document.body.classList.toggle("flow-scroll", scrolled());
+    applyLayout();
   });
 
   $("font-dec").addEventListener("click", () => setFontSize(settings.get().fontSize - 10));
   $("font-inc").addEventListener("click", () => setFontSize(settings.get().fontSize + 10));
-  $("zoom-dec").addEventListener("click", () => setZoom(pdfView ? pdfView.zoom / 1.2 : 1));
-  $("zoom-inc").addEventListener("click", () => setZoom(pdfView ? pdfView.zoom * 1.2 : 1));
+  $("zoom-dec").addEventListener("click", () => setZoom(pdfZoom / 1.2));
+  $("zoom-inc").addEventListener("click", () => setZoom(pdfZoom * 1.2));
   $("zoom-fit").addEventListener("click", () => setZoom(1));
   for (const sw of document.querySelectorAll(".swatch")) {
     sw.addEventListener("click", () => setTheme(sw.dataset.theme));
@@ -118,16 +120,16 @@ export function init(h) {
   for (const [id, key] of [["font-family", "fontFamily"], ["line-height", "lineHeight"], ["text-align", "textAlign"], ["margins", "margin"]]) {
     $(id).addEventListener("change", async (e) => {
       await settings.update({ [key]: e.target.value });
-      if (key === "fontFamily") { if (rendition) await rebuild(); return; } // fonts are woven into the book's own styles
-      applyUserStyle();
-      if (key === "margin") relayout();
+      if (key === "fontFamily") { await rebuild(); return; } // fonts are woven into the book's own styles
+      applyStyles();
+      if (key === "margin") applyLayout();
     });
   }
   $("embedded-fonts").addEventListener("change", async (e) => {
     await settings.update({ embeddedFonts: e.target.checked });
-    if (rendition) await rebuild(); // the book's fonts are put back or taken out as each chapter loads
+    await rebuild(); // the book's fonts are put back or taken out as each chapter loads
   });
-  $("hyphens").addEventListener("change", async (e) => { await settings.update({ hyphens: e.target.checked }); applyUserStyle(); });
+  $("hyphens").addEventListener("change", async (e) => { await settings.update({ hyphens: e.target.checked }); applyStyles(); });
   $("keep-awake").addEventListener("change", async (e) => { await settings.update({ keepAwake: e.target.checked }); awake(!!meta); });
   for (const id of ["brightness", "re-bright"]) {
     $(id).addEventListener("input", (e) => {
@@ -165,9 +167,7 @@ export function init(h) {
       if (s.cancelled || s.fromEdge || dx < 12 || dy > dx) { slider.value = s.value; return; }
     }
     finder.noteJump();
-    const f = slider.value / 1000;
-    if (pdfView) pdfView.goToPercent(f);
-    else if (book?.locations?.length()) display(book.locations.cfiFromPercentage(f));
+    goToPercent(slider.value / 1000);
   });
 
   $("sync-jump").addEventListener("click", () => {
@@ -192,30 +192,17 @@ export function init(h) {
   marks.init();
   finder.init();
 
-  // Keys are handled by dpad.js (see api() below).
-  // Re-paginate on rotation / window resize.
-  // Re-paginate whenever the page's frame changes size, not only when the window does: on phones
-  // the safe-area margins change as Android's bars hide and show (and with rotation, split screen
-  // or the keyboard) without any window resize event. Pages left at the old height ran their
-  // bottom line past the visible edge.
-  window.addEventListener("resize", scheduleRelayout);
-  if ("ResizeObserver" in window) {
-    let seen = "";
-    new ResizeObserver(() => {
-      const r = $("viewer").getBoundingClientRect();
-      const size = `${Math.round(r.width)}x${Math.round(r.height)}`;
-      if (size === seen) return;
-      seen = size;
-      scheduleRelayout();
-    }).observe($("viewer"));
-  }
+  // Keys are handled by dpad.js (see api() below). foliate-js lays the pages out again by itself
+  // whenever its frame changes size (rotation, Android's bars hiding, split screen), keeping the
+  // page you were reading; only the side margins, which follow the width, are ours to update.
+  window.addEventListener("resize", scheduleLayout);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { awake(!!meta); fullScreen(!!meta); if (meta) fitGuard(); return; }
+    if (document.visibilityState === "visible") { awake(!!meta); fullScreen(!!meta); return; }
     // Leaving the app (home button, switching apps): save the exact page now, as Android may close us.
-    if (meta && !holdSaves) { syncLocation(); if (current && current.cfi !== lastSavedCfi) saveProgress(); }
+    if (meta && !holdSaves && current && current.cfi !== lastSavedCfi) saveProgress();
     sync.flushNow();
   });
-  window.addEventListener("harmonarium:readera", () => { fullScreen(!!meta); if (meta) fitGuard(); });
+  window.addEventListener("harmonarium:readera", () => fullScreen(!!meta));
   applyBrightness(settings.get()?.brightness ?? 1);
 }
 
@@ -243,53 +230,36 @@ async function dayNight() {
 }
 
 /** Turn a page (+1 forward, -1 back) with the chosen animation. */
-function turn(dir) {
-  if (pdfView) return pdfView.turn(dir);
-  if (!rendition) return;
+let fading = false;
+async function turn(dir) {
+  if (!view?.renderer) return;
   userMoved();
-  // Whatever the animation, check where we landed once it's done (see syncLocation).
-  clearTimeout(turnCheck);
-  turnCheck = setTimeout(syncLocation, 700);
-  if (turner) return turner.turn(dir);
-  return dir > 0 ? rendition.next() : rendition.prev();
-}
-
-let turnCheck = 0;
-
-/** You moved (a turn, a drag, a jump): your new page becomes the anchor. */
-function userMoved() { anchored = false; clearTimeout(anchorTimer); }
-
-/** The pages are about to be laid out again: hold on to the page you were reading. */
-function holdAnchor() { if (anchorCfi && !pdfView && !scrolled()) anchored = true; }
-
-/** After a re-layout, make sure the anchored page is still the one on screen; if not, go back to it. */
-function checkAnchor(delay = 60, recount = true) {
-  clearTimeout(anchorTimer);
-  anchorTimer = setTimeout(() => {
-    if (!anchorCfi || !rendition || pdfView || turner?.busy()) return;
-    try {
-      const loc = rendition.currentLocation();
-      const s = loc?.start?.cfi, e = loc?.end?.cfi;
-      if (!s || !e) return;
-      if (anchored && (cfiCmp(anchorCfi, s) < 0 || cfiCmp(anchorCfi, e) > 0)) rendition.display(anchorCfi);
-      // Still on the right page, but the chapter may now have more or fewer pages: recount.
-      else if (recount) onRelocated(loc);
-    } catch { /* busy; the next layout check will try again */ }
-  }, delay);
-}
-/** Ask epub.js where the page is right now and take that as the current place, in case a
- *  turn went unreported. Runs after turns, before leaving the book and when the app is hidden. */
-function syncLocation() {
-  if (pdfView || !rendition || !book || turner?.busy()) return;
+  const go = () => (dir > 0 ? view.next() : view.prev());
+  if (turnMode() !== "fade" || scrolled() || pdf) return go();
+  // Fade: the page dips out and comes back on the new one.
+  const el = $("viewer");
+  if (fading) return go();
+  fading = true;
   try {
-    const loc = rendition.currentLocation();
-    if (loc?.start?.cfi && loc.start.cfi !== current?.cfi) onRelocated(loc);
-  } catch { /* the rendition is busy or gone */ }
+    el.style.transition = "opacity 110ms ease-in";
+    el.style.opacity = "0";
+    await wait(110);
+    await go();
+    el.style.transition = "opacity 160ms ease-out";
+    el.style.opacity = "1";
+    await wait(160);
+  } finally {
+    el.style.transition = ""; el.style.opacity = "";
+    fading = false;
+  }
 }
+
+/** You moved (a turn, a drag, a jump): the page you land on becomes your place. */
+function userMoved() { anchored = false; }
 
 let wheelAt = 0;
 function onWheel(e) {
-  if (pdfView || scrolled()) return; // those scroll natively
+  if (pdf || scrolled()) return; // those scroll by themselves
   const d = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
   if (Math.abs(d) < 4 || Date.now() - wheelAt < 350) return;
   wheelAt = Date.now();
@@ -334,7 +304,7 @@ export const api = {
   // Keypad shortcuts (see dpad.js)
   toggleContents: () => { document.body.classList.remove("immersive"); toggle("toc-drawer"); },
   toggleText: () => { document.body.classList.remove("immersive"); toggle("aa-panel"); },
-  textSize: (step) => (pdfView ? setZoom(pdfView.zoom * (step > 0 ? 1.2 : 1 / 1.2)) : setFontSize(settings.get().fontSize + step * 10)),
+  textSize: (step) => (pdf ? setZoom(pdfZoom * (step > 0 ? 1.2 : 1 / 1.2)) : setFontSize(settings.get().fontSize + step * 10)),
   cycleTheme: () => {
     const order = ["light", "sepia", "dark", "black"];
     const next = order[(order.indexOf(settings.get().theme) + 1) % order.length];
@@ -352,6 +322,42 @@ function closeOverlays() {
   finder.close();
   marks.hideSelection();
   if (pendingRemote) hideBanner();
+}
+
+// ------------------------------------------------------------------ places
+
+/** A stored place → what foliate-js navigates to: a page index for PDFs, else the CFI or href. */
+function target(at) {
+  if (at == null || at === "") return null;
+  const m = /^pdf:(\d+)/.exec(String(at));
+  if (m) return Math.max(0, Number(m[1]) - 1);
+  return at;
+}
+const pdfPos = (page, frac = 0) => `pdf:${page}:${Math.max(0, Math.min(0.999, frac)).toFixed(3)}`;
+
+/** The page number (1-based) of a stored place, or 0 if it can't be told without loading. */
+function pageOf(at) {
+  if (pdf) return (target(at) ?? -1) + 1;
+  return 0;
+}
+
+const pages = () => (pdf ? view?.book?.sections.length || 0 : loc?.location?.total || 0);
+const pageNow = () => (pdf ? (loc?.section?.current ?? 0) + 1 : loc?.location ? loc.location.current + 1 : 0);
+
+function goToPercent(f) {
+  if (!view?.book) return;
+  userMoved();
+  f = Math.max(0, Math.min(1, f));
+  if (pdf) return view.goTo(Math.round(f * (view.book.sections.length - 1)));
+  return view.goToFraction(f);
+}
+
+function goToPage(n) {
+  if (!view?.book) return;
+  userMoved();
+  if (pdf) return view.goTo(Math.max(0, n - 1));
+  const total = pages();
+  return total ? view.goToFraction((n - 1) / total) : null;
 }
 
 // ------------------------------------------------------------------ open
@@ -379,116 +385,144 @@ export async function open(id) {
   if (readera.readerOn()) document.body.classList.add("immersive");
   tocIndex = -1;
   current = null;
-  $("viewer").innerHTML = "";
+  loc = null;
+  chapterPages = null;
+  pdfZoom = 1;
   $("progress-slider").disabled = true;
   document.body.dataset.rtheme = settings.get().theme;
 
-  const pdf = meta.format === "pdf" || pdfengine.isPdf("", "", buf);
+  pdf = meta.format === "pdf" || isPdfBytes(buf);
+  document.body.classList.add("foliate");
   document.body.classList.toggle("pdf-mode", pdf);
-  document.body.classList.toggle("flow-scroll", !pdf && scrolled());
+  document.body.classList.toggle("flow-scroll", scrolled());
   syncPanelState();
 
-  if (pdf) {
-    pdfDoc = await pdfengine.load(buf);
-    toc = await pdfengine.outline(pdfDoc);
-    renderToc();
-    pdfView = pdfengine.view($("viewer"), pdfDoc, {
-      onMove: onPdfMove,
-      onTap: (zone) => {
-        marks.hideSelection();
-        if (zone === "middle") toggleBars();
-        else { if (!document.body.classList.contains("immersive") && readera.readerOn()) closeOverlays(); turn(zone === "next" ? 1 : -1); }
-      },
-    });
-    loadAnnotations();
-    await pdfView.start(local?.cfi);
-    $("progress-slider").disabled = false;
-    if (!meta.pages) meta = { ...meta, pages: pdfDoc.numPages };
-  } else {
-    book = ePub(buf);
-    await book.ready;
-    const nav = await book.loaded.navigation;
-    toc = flattenToc(nav.toc);
-    renderToc();
+  try {
+    await mountView(buf);
+  } catch (err) {
+    console.error("open", err);
+    toast("This book couldn't be opened");
+    await closeBook();
+    return false;
+  }
 
-    makeRendition();
-    loadAnnotations();
-
-    // Cached location index → accurate percentages immediately.
-    let savedLocations = await db.get("locations", id);
-    if (savedLocations) { book.locations.load(savedLocations); renderToc(); }
-
-    // A place imported from ReadEra is a fraction of the book: turn it into an exact spot, once.
-    let startAt = local?.cfi || null;
-    if (!startAt && local?.fromReadEra != null) {
-      try {
-        if (!savedLocations) {
-          toast("Finding your place from ReadEra…");
-          await book.locations.generate(1600);
-          savedLocations = book.locations.save();
-          await db.put("locations", savedLocations, id);
-          renderToc();
-        }
-        startAt = book.locations.cfiFromPercentage(local.fromReadEra);
-        // The page index gives a span of text; keep its first spot, like every other saved place.
-        const c = new ePub.CFI(startAt);
-        if (c.range) { c.collapse(true); startAt = c.toString(); }
+  // A place imported from ReadEra is a fraction of the book: turn it into an exact spot, once.
+  let startAt = local?.cfi || null;
+  if (!startAt && local?.fromReadEra != null) {
+    try {
+      await goToPercent(local.fromReadEra);
+      // The page found holds a span of text; keep its first spot, like every other saved place.
+      startAt = pdf ? pdfPos(pageNow()) : view.lastLocation?.cfi ? CFI.collapse(view.lastLocation.cfi) : null;
+      if (startAt) {
         const entry = { ...local, cfi: startAt };
         delete entry.fromReadEra;
         await db.put("progress", entry);
         lastSavedCfi = startAt;
         sync.queue(meta, entry);
-      } catch (err) { console.warn("ReadEra place", err); }
-    }
-
-    anchorCfi = startAt;
-    anchored = !!anchorCfi && !scrolled();
-    await showFirst(startAt);
-
-    if (!savedLocations) {
-      book.locations.generate(1600).then(async () => {
-        if (!book) return;
-        await db.put("locations", book.locations.save(), id);
-        enableSlider();
-        renderToc(); // now with page numbers
-        if (current) updateFooter();
-      }).catch(() => {});
-    } else {
-      enableSlider();
-    }
+      }
+    } catch (err) { console.warn("ReadEra place", err); }
   }
+
+  anchorCfi = startAt;
+  anchored = !!anchorCfi && !pdf;
+  await showAt(startAt);
+  $("progress-slider").disabled = false;
+  renderToc(); // with page numbers, now that the page count is known
+  if (pdf && !meta.pages) meta = { ...meta, pages: view.book.sections.length };
 
   await db.put("books", { ...meta, lastOpenedAt: Date.now() });
   awake(true);
   fullScreen(true);
-  fitGuard();
   checkRemote(local); // runs in the background, then releases holdSaves
   return true;
+}
+
+function isPdfBytes(buf) {
+  const h = new Uint8Array(buf, 0, Math.min(5, buf.byteLength));
+  return h[0] === 0x25 && h[1] === 0x50 && h[2] === 0x44 && h[3] === 0x46;
+}
+
+/** Create the <foliate-view>, open the book in it and wire it up. */
+async function mountView(buf) {
+  $("viewer").innerHTML = "";
+  view = document.createElement("foliate-view");
+  view.id = "foliate";
+  $("viewer").append(view);
+  view.addEventListener("load", (e) => onLoad(e.detail));
+  // Links to websites inside a book would turn the reader into a browser (and on phones
+  // without one, like the Commodore Callback, strand you there), so they're turned off.
+  view.addEventListener("external-link", (e) => { e.preventDefault(); toast("Links to websites are turned off in books"); });
+  view.addEventListener("link", () => { finder.noteJump(); userMoved(); }); // a footnote: leave a way back
+  view.addEventListener("draw-annotation", onDrawAnnotation);
+  view.addEventListener("show-annotation", (e) => { annotationTapAt = Date.now(); marks.onAnnotationTap(e.detail.value); });
+
+  const name = pdf ? `${meta.id}.pdf` : `${meta.id}.epub`;
+  const file = new File([buf], name, { type: pdf ? "application/pdf" : "application/epub+zip" });
+  await view.open(file);
+  noScripts(view.book);
+  // foliate-view hears the renderer first and works out the location (view.lastLocation); this
+  // runs just after, with both the location and the renderer's own place in the chapter.
+  view.renderer.addEventListener("relocate", (e) => onRelocate(e.detail));
+  applyLayout();
+  applyStyles();
+
+  toc = flattenToc(view.book.toc);
+  renderToc();
+  loadAnnotations();
+}
+
+/** Books never run code. foliate-js shows each chapter in a frame that must allow scripts (for a
+ *  WebKit bug), and that frame shares the app's origin, so a book's script could reach your sync
+ *  link and key. Script files aren't loaded at all, and every chapter gets a policy that forbids
+ *  scripts inside it (inline ones and onclick-style attributes included). */
+const NO_SCRIPT = `<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'" />`;
+function noScripts(book) {
+  const t = book?.transformTarget;
+  if (!t) return;
+  t.addEventListener("load", (e) => { if (e.detail.isScript) e.detail.allow = false; });
+  t.addEventListener("data", (e) => {
+    const d = e.detail;
+    if (!/html/i.test(d.type || "")) return;
+    d.data = Promise.resolve(d.data).then((x) => {
+      if (typeof x !== "string") return x;
+      if (/<head[\s>]/i.test(x)) return x.replace(/<head(\s[^>]*)?>/i, (h) => h + NO_SCRIPT);
+      return x.replace(/<html(\s[^>]*)?>/i, (h) => `${h}<head>${NO_SCRIPT}</head>`);
+    });
+  });
+}
+
+/** Put the first page up. */
+async function showAt(at) {
+  const t = target(at);
+  try {
+    if (t == null) await view.init({ showTextStart: false });
+    else await view.init({ lastLocation: t });
+  } catch (err) {
+    console.warn("place", err);
+    await view.init({ showTextStart: false });
+  }
+  if (!loc) await view.goTo(0); // a place that no longer resolves: start at the beginning
 }
 
 /** What marks.js and finder.js need to know about the open book. */
 function loadAnnotations() {
   const ctx = {
     bookId: meta.id,
-    isPdf: !!pdfView,
-    book,
-    pdfDoc,
-    rendition: () => rendition,
+    isPdf: pdf,
+    view: () => view,
     current: () => current,
+    location: () => loc,
     display,
     jump: (at) => { finder.go(at); if (window.innerWidth < 700) $("toc-drawer").classList.add("hidden"); },
     chapterFor,
     night: () => NIGHT.has(settings.get().theme),
     find: (q) => { closeOverlays(); finder.open(q); },
-    pdfSnippet: (n) => pdfengine.pageSnippet(pdfDoc, n),
-    pageOf: (at) => {
-      if (pdfView) return pdfengine.parsePos(at)?.page || 0;
-      try { return book?.locations?.length() ? book.locations.locationFromCfi(at) + 1 : 0; } catch { return 0; }
-    },
-    pages: () => (pdfView ? pdfView.pages : book?.locations?.length() || 0),
-    pageNow: () => (pdfView ? pdfView.position().page : current && book?.locations?.length() ? book.locations.locationFromCfi(current.cfi) + 1 : 0),
-    goToPage: (n) => (pdfView ? pdfView.goTo(n) : display(book.locations.cfiFromLocation(n - 1))),
-    goToPercent: (f) => (pdfView ? pdfView.goToPercent(f) : book?.locations?.length() ? display(book.locations.cfiFromPercentage(f)) : display(book.spine.get(Math.floor(f * (book.spine.length - 1)))?.href)),
+    pageOf,
+    pages,
+    pageNow,
+    goToPage,
+    goToPercent,
+    pdfPos,
   };
   marks.load(ctx);
   finder.load(ctx);
@@ -496,22 +530,17 @@ function loadAnnotations() {
 
 /** Go to a stored position (an EPUB CFI or href, or a PDF "pdf:…" position). */
 function display(at) {
-  if (!at) return;
+  const t = target(at);
+  if (t == null || !view) return;
   userMoved();
-  if (pdfView) return pdfView.display(at);
-  return rendition?.display(at);
+  return view.goTo(t);
 }
 
-/** Go to a reading place from another device. Its screen or text size may differ, so the page
- *  here that holds that place starts a little earlier; saving that start would send this device's
- *  earlier place back, and the two would walk each other backwards. So the exact place is kept as
- *  the anchor (saved and synced unchanged) until you turn a page here. */
+/** Go to a reading place from another device, keeping it as your place until you turn a page. */
 function goToPlace(at) {
-  if (!at) return;
-  if (pdfView) return pdfView.display(at);
-  anchorCfi = at;
-  anchored = !scrolled();
-  return rendition?.display(at);
+  if (!at || !view) return;
+  if (!pdf) { anchorCfi = at; anchored = !scrolled(); }
+  return view.goTo(target(at));
 }
 
 function toggleBars() {
@@ -520,173 +549,117 @@ function toggleBars() {
   $("aa-panel").classList.add("hidden");
 }
 
+// ------------------------------------------------------------ the pages
+
+/** Every chapter (EPUB) or page (PDF) as foliate-js loads it into its frame. */
+function onLoad({ doc, index }) {
+  if (!pdf) {
+    try { weaveFonts(doc); } catch (err) { console.warn("fonts", err); }
+    // Hyphenation needs a language; borrow the book's when the chapter file has none.
+    const html = doc.documentElement;
+    const lang = view?.book?.metadata?.language;
+    if (!html.getAttribute("lang") && lang) html.setAttribute("lang", Array.isArray(lang) ? lang[0] : lang);
+  }
+  doc.addEventListener("click", (e) => onPageClick(e, doc));
+  doc.addEventListener("wheel", onWheel, { passive: true });
+  doc.addEventListener("keydown", (e) => hooks.onKey(e));
+  if (!pdf) {
+    let selTimer = 0;
+    doc.addEventListener("selectionchange", () => {
+      marks.onSelectionChange(doc);
+      clearTimeout(selTimer);
+      selTimer = setTimeout(() => onSelection(doc, index), 300);
+    });
+  }
+}
+
+/** A tap on the page: the edges turn it, the middle brings the bars up or hides them. */
+function onPageClick(e, doc) {
+  if (e.defaultPrevented || e.target?.closest?.("a[href]")) return;
+  const sel = doc.getSelection?.();
+  if (sel && String(sel).trim()) return;
+  if (marks.selectionOpen()) { marks.hideSelection(); return; }
+  const fr = doc.defaultView?.frameElement?.getBoundingClientRect?.();
+  const x = (fr ? fr.left : 0) + e.clientX;
+  const wrap = $("viewer-wrap").getBoundingClientRect();
+  const w = wrap.width || window.innerWidth;
+  const rel = x - wrap.left;
+  // Let foliate's own click on a highlight (show-annotation) go first.
+  setTimeout(() => {
+    if (Date.now() - annotationTapAt < 400) return;
+    const edge = readera.readerOn() ? 1 / 3 : 0.3;
+    if (rel < w * edge) {
+      if (!document.body.classList.contains("immersive") && readera.readerOn()) closeOverlays();
+      return turn(-1);
+    }
+    if (rel > w * (1 - edge)) {
+      if (!document.body.classList.contains("immersive") && readera.readerOn()) closeOverlays();
+      return turn(1);
+    }
+    toggleBars();
+  }, 0);
+}
+
+/** Text selected in the book: show the Copy / Quote / Note / Find bar over it. */
+function onSelection(doc, index) {
+  const sel = doc.getSelection?.();
+  if (!sel || sel.isCollapsed || !String(sel).trim() || !view) return;
+  try {
+    const range = sel.getRangeAt(0);
+    const cfi = view.getCFI(index, range);
+    marks.onSelected(cfi, { document: doc, window: doc.defaultView });
+  } catch (err) { console.warn("selection", err); }
+}
+
+/** foliate-js asks how to draw a highlight: quotes in gold, a found word in blue. */
+function onDrawAnnotation(e) {
+  const { draw, annotation } = e.detail;
+  if (annotation.kind === "find") return draw(Overlayer.highlight, { color: "#4fa3f7" });
+  draw(Overlayer.highlight, { color: "#ffd54f" });
+}
+
+let layoutTimer = 0;
+function scheduleLayout() {
+  clearTimeout(layoutTimer);
+  layoutTimer = setTimeout(() => applyLayout(), 120);
+}
+
 /** The side margins: ReadEra's slim default, scaled by the Margins setting. */
 function pageGap() {
   const w = $("viewer")?.clientWidth || window.innerWidth;
   const f = MARGIN[settings.get().margin] || 1;
   return 2 * Math.round(Math.min(48, Math.max(14, w * 0.05)) * f);
 }
-const wantGap = () => (readera.readerOn() || (settings.get().margin && settings.get().margin !== "m") ? pageGap() : undefined);
 
-/** Put the book's first page up. If the frame changes size meanwhile (Android hides its bars as a
- *  book opens), epub.js used to throw the half-built page away: a new book stayed blank, and a
- *  book with a saved place came up laid out for the old size, its bottom line cut off. So any
- *  re-layout asked for now waits, and runs once the page is up. */
-let showing = false, relayoutWanted = false;
-async function showFirst(at) {
-  showing = true;
-  relayoutWanted = false;
-  try { await rendition.display(at || undefined); }
-  finally { showing = false; }
-  tuneManager();
-  if (relayoutWanted) relayout(true);
-  fitGuard();
-}
-
-let relayoutTimer = 0;
-function scheduleRelayout() {
-  clearTimeout(relayoutTimer);
-  relayoutTimer = setTimeout(() => { if (rendition || pdfView) relayout(); }, 120);
-}
-
-/** Recalculate margins and re-paginate, e.g. after rotating the phone. `force` lays the pages out
- *  again even when epub.js believes the size hasn't changed. */
-function relayout(force = false) {
-  if (pdfView) { pdfView.resize(); return; }
-  if (!rendition) return;
-  if (showing) { relayoutWanted = true; return; }
-  const gap = wantGap();
-  rendition.settings.gap = gap;
-  if (rendition.manager?.settings) rendition.manager.settings.gap = gap;
-  if (force && rendition.manager) rendition.manager._stageSize = undefined;
-  holdAnchor();
-  rendition.resize(undefined, undefined, anchorCfi || undefined);
-  checkAnchor(400);
-  if (!force) fitGuard();
-}
-
-/** Are the pages laid out for the frame they are shown in? As a book opens on Android, the bars
- *  hide and the frame changes size, sometimes while epub.js is still laying out the first page;
- *  that page then kept its old height and ran its bottom line past the screen until something
- *  else (leaving the app and coming back) re-laid it out. */
-function pageFits() {
-  if (!rendition || pdfView) return true;
-  const m = rendition.manager, v = $("viewer");
-  if (!m?.stage || !v) return true;
-  const r = v.getBoundingClientRect();
-  if (r.width < 50 || r.height < 50) return true; // not on screen
-  // The size epub.js laid the pages out for, against the size of its frame now.
-  const s = m._stageSize, now = m.stage.size();
-  if (s && now && (Math.abs(s.width - now.width) > 1 || Math.abs(s.height - now.height) > 1)) return false;
-  if (scrolled()) return true;
-  if (!m.views?.length) return false; // nothing on screen at all
-  const left = Math.max(r.left, 0) + 1, right = Math.min(r.right, window.innerWidth) - 1;
-  const bottom = Math.min(r.bottom, window.innerHeight) + 0.5;
-  for (const f of v.querySelectorAll("iframe")) {
-    const fr = f.getBoundingClientRect(), doc = f.contentDocument;
-    if (fr.right <= left || fr.left >= right || !doc?.body) continue;
-    if (fr.bottom <= bottom) continue; // the whole page is inside the frame
-    // The page is taller than the frame: is any line of what's on screen past the bottom?
-    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT), range = doc.createRange();
-    while (walker.nextNode()) {
-      const n = walker.currentNode;
-      if (!n.textContent.trim()) continue;
-      range.selectNodeContents(n);
-      for (const q of range.getClientRects()) {
-        if (q.width < 1 || fr.left + q.right <= left || fr.left + q.left >= right) continue;
-        if (fr.top + q.bottom > bottom) return false;
-      }
-    }
-  }
-  return true;
-}
-
-/** Check a few times over the next seconds that the pages fit; lay them out again if not. */
-let fitTimers = [];
-function fitGuard() {
-  for (const t of fitTimers) clearTimeout(t);
-  let fixes = 0;
-  fitTimers = [250, 700, 1400, 2600, 4500].map((ms) => setTimeout(() => {
-    if (!rendition || pdfView || turner?.busy() || fixes >= 2) return;
-    let ok = true;
-    try { ok = pageFits(); } catch { /* a page is being swapped; the next check will see */ }
-    if (ok) return;
-    fixes++;
-    if (rendition.manager?.views?.length) relayout(true);
-    else rendition.display(anchorCfi || current?.cfi || initialCfi || undefined); // blank: put the page back
-  }, ms));
-}
-
-/** Create the rendition for the current page-turn mode (slide needs epub.js's continuous manager). */
-function makeRendition() {
+/** Pages or scroll, page turns, margins and columns: the renderer's own settings. */
+function applyLayout() {
+  const r = view?.renderer;
+  if (!r) return;
   const flow = scrolled() ? "scrolled" : "paginated";
-  let mode = pageturn.MODES.includes(settings.get().pageTurn) ? settings.get().pageTurn : "slide";
-  if (flow === "scrolled") mode = "none";
-  const gap = wantGap();
-  rendition = book.renderTo("viewer", {
-    manager: flow === "scrolled" ? "continuous" : pageturn.managerFor(mode),
-    width: "100%",
-    height: "100%",
-    flow,
-    spread: flow === "scrolled" ? "none" : "auto",
-    minSpreadWidth: 900,
-    ...(gap ? { gap } : {}),
-  });
-  for (const [name, t] of Object.entries(THEMES)) {
-    rendition.themes.register(name, {
-      body: { background: `${t.bg} !important`, color: `${t.fg} !important` },
-      "a, a:link, a:visited": { color: `${t.link} !important` },
-      "::selection": { background: "rgba(66, 133, 244, 0.35)" },
-    });
+  if (r.getAttribute("flow") !== flow) r.setAttribute("flow", flow);
+  if (pdf) {
+    r.setAttribute("zoom", "fit-width");
+    r.setAttribute("scale-factor", String(Math.round(pdfZoom * 100)));
+    r.setAttribute("spread", window.innerWidth >= 900 && !scrolled() ? "auto" : "none");
+    return;
   }
-  rendition.themes.select(settings.get().theme);
-  rendition.themes.fontSize(`${settings.get().fontSize}%`);
-  rendition.hooks.content.register((contents) => {
-    injectUserStyle(contents);
-    guardLinks(contents);
-    contents.document.addEventListener("wheel", onWheel, { passive: true });
-    contents.document.addEventListener("selectionchange", () => marks.onSelectionChange(contents.document));
-    // Android's back swipe takes the touch away mid-drag: put the page back.
-    contents.document.addEventListener("touchcancel", () => turner?.touch.cancel(), { passive: true });
-    // Fonts and pictures that arrive late re-flow the chapter: keep the anchored page on screen.
-    contents.document.fonts?.ready?.then(() => checkAnchor(80)).catch(() => {});
-    for (const img of contents.document.images || []) if (!img.complete) img.addEventListener("load", () => checkAnchor(120), { once: true });
-    contents.on?.("resize", () => checkAnchor(120));
-  });
-  // Re-layouts are ours alone (scheduleRelayout), so none can land while the first page is built.
-  rendition.on("attached", () => {
-    const st = rendition?.manager?.stage;
-    if (st?.resizeFunc) window.removeEventListener("resize", st.resizeFunc);
-  });
-  wireGestures(mode);
-  rendition.on("relocated", onRelocated);
-  rendition.on("selected", (cfiRange, contents) => marks.onSelected(cfiRange, contents));
-  turner = pageturn.attach(rendition, mode, $("viewer"), { onUserMove: userMoved });
+  const mode = turnMode();
+  r.toggleAttribute("animated", mode === "slide" || mode === "curl");
+  if (mode === "curl") r.setAttribute("turn-style", "curl"); else r.removeAttribute("turn-style");
+  const side = Math.round(pageGap() / 2);
+  const tight = readera.readerOn();
+  r.setAttribute("margin-left", `${side}px`);
+  r.setAttribute("margin-right", `${side}px`);
+  r.setAttribute("margin-top", `${tight ? 10 : 22}px`);
+  r.setAttribute("margin-bottom", `${tight ? 6 : 22}px`);
+  r.setAttribute("gap", "0%");
+  r.setAttribute("column-gap", `${2 * side}px`);
+  // One page on phones and narrow windows, two side by side from 900 px.
+  r.setAttribute("max-inline-size", scrolled() ? "760px" : "899px");
+  r.setAttribute("max-column-count", "2");
 }
 
-/** Slide mode: load the next chapter a couple of pages early so sliding into it stays smooth. */
-function tuneManager() {
-  const m = rendition?.manager;
-  if (m && m.layout && turner?.mode === "slide") m.settings.offset = Math.max(500, m.layout.width * 2);
-}
-
-/** Switch page-turn mode or flow on an open book, keeping the reader's place. */
-async function rebuild() {
-  if (!book) return;
-  const cfi = anchorCfi || current?.cfi;
-  holdAnchor();
-  turner?.destroy(); turner = null;
-  try { rendition.destroy(); } catch { /* ignore */ }
-  $("viewer").innerHTML = "";
-  document.body.classList.toggle("flow-scroll", scrolled());
-  makeRendition();
-  await showFirst(cfi);
-  marks.applyHighlights();
-}
-
-function enableSlider() {
-  $("progress-slider").disabled = !pdfView && !book?.locations?.length();
-}
+// ------------------------------------------------------------- progress
 
 async function checkRemote(local) {
   try {
@@ -732,55 +705,47 @@ function hideBanner() {
   $("sync-banner").classList.add("hidden");
 }
 
-// ------------------------------------------------------------- progress
-
-function onRelocated(loc) {
-  const cfi = loc.start.cfi;
-  let percent;
-  if (book.locations.length()) percent = book.locations.percentageFromCfi(cfi);
-  else percent = book.spine.length ? loc.start.index / book.spine.length : 0;
-  const hit = tocEntryFor(loc.start.href);
-  tocIndex = hit ? toc.indexOf(hit) : -1;
-  chapterPages = chapterPage(loc);
-  moved(cfi, percent, hit?.label || "", loc.atEnd || (book.locations.length() && percent >= 0.995));
-  marks.onRelocated(loc);
-  if (anchored) checkAnchor(60, false); // (no recount from here, or it would never stop)
-}
-
-/** Pages within this chapter (its spine file). epub.js rounds the page down, and on phones whose
- *  screens aren't a whole number of pixels wide a settled page sits a hair short of its edge, so
- *  the count could repeat; work it out from where the page actually is instead. */
-function chapterPage(loc) {
-  const d = loc.start.displayed || {};
-  if (!(d.total > 0) || scrolled()) return null;
-  try {
-    const m = rendition.manager;
-    const view = m.views.all().find((v) => v.section?.index === loc.start.index);
-    const pw = m.layout?.pageWidth;
-    if (view && pw > 0) {
-      const into = m.container.getBoundingClientRect().left - view.position().left;
-      return { page: Math.min(d.total, Math.max(1, Math.round(into / pw) + 1)), total: d.total };
+/** foliate-js moved: work out the place, chapter and percent. `r` is the renderer's own report
+ *  (which chapter, and how far into it), `loc` the location foliate-view made of it. */
+function onRelocate(r) {
+  loc = view?.lastLocation;
+  if (!loc) return;
+  const index = r.index ?? loc.section?.current ?? 0;
+  let cfi, percent;
+  if (pdf) {
+    const n = view.book.sections.length;
+    cfi = pdfPos(index + 1);
+    percent = n > 1 ? index / (n - 1) : 1;
+    const hit = pdfTocFor(index);
+    tocIndex = hit ? toc.indexOf(hit) : -1;
+    const start = hit ? hit.index : 0;
+    const next = toc.filter((t) => t.index > start).reduce((m, t) => Math.min(m, t.index), n);
+    chapterPages = { page: index - start + 1, total: Math.max(1, next - start) };
+  } else {
+    // foliate reports the whole visible page as a range; a place is where that page starts.
+    try { cfi = CFI.collapse(loc.cfi); } catch { cfi = loc.cfi; }
+    // How far through the book this page starts (foliate's own fraction is where it ends).
+    const fr = view.getSectionFractions?.() || [];
+    const a = fr[index], b = fr[index + 1];
+    percent = a != null && b != null ? a + (b - a) * (r.fraction || 0) : loc.fraction ?? 0;
+    percent = Math.max(0, Math.min(1, percent));
+    const hit = tocEntryFor(loc.tocItem);
+    tocIndex = hit ? toc.indexOf(hit) : -1;
+    chapterPages = null;
+    if (!scrolled() && r.size > 0) {
+      const total = Math.max(1, Math.round(1 / r.size));
+      chapterPages = { page: Math.min(total, Math.max(1, Math.round((r.fraction || 0) / r.size) + 1)), total };
     }
-  } catch { /* fall back to epub.js's count */ }
-  return { page: Math.min(d.page, d.total), total: d.total };
+  }
+  const atEnd = pdf ? index >= view.book.sections.length - 1 : !!view.renderer?.atEnd;
+  if (atEnd) percent = 1; // the last page starts a little before the end, but it is the end
+  moved(cfi, percent, tocIndex >= 0 ? toc[tocIndex].label : loc.tocItem?.label || "", atEnd);
+  marks.onRelocated(loc);
 }
 
-function onPdfMove({ page, frac, percent, atEnd }) {
-  const hit = pdfTocFor(page);
-  tocIndex = hit ? toc.indexOf(hit) : -1;
-  // This chapter runs from its outline entry to the page before the next one.
-  const start = hit ? hit.page : 1;
-  const next = toc.filter((t) => t.page > start).reduce((m, t) => Math.min(m, t.page), (pdfView?.pages || page) + 1);
-  chapterPages = { page: page - start + 1, total: Math.max(1, next - start) };
-  moved(pdfengine.pos(page, frac), percent, hit?.label || "", atEnd);
-  marks.onRelocated({ page });
-  $("foot-page").textContent = `${page} / ${pdfView?.pages || ""}`;
-}
-
-/** Shared by both engines: the reader is now at `cfi`. */
 function moved(cfi, percent, chapter, atEnd) {
   // A re-layout doesn't move your place: keep the anchor as the place to save (it's on screen).
-  if (anchored && anchorCfi && !pdfView) cfi = anchorCfi;
+  if (anchored && anchorCfi && !pdf) cfi = anchorCfi;
   else anchorCfi = cfi;
   current = { cfi, percent, chapter };
   $("viewer").dataset.cfi = cfi; // where the reader is (handy for tests and debugging)
@@ -794,16 +759,13 @@ function moved(cfi, percent, chapter, atEnd) {
 }
 
 function updateFooter() {
-  if (!pdfView && book?.locations?.length() && current) {
-    current.percent = book.locations.percentageFromCfi(current.cfi);
-    $("foot-page").textContent = `${book.locations.locationFromCfi(current.cfi) + 1} / ${book.locations.length()}`;
-  } else if (!pdfView) $("foot-page").textContent = "";
+  const total = pages();
+  const now = pageNow();
+  $("foot-page").textContent = total ? `${now} / ${total}` : "";
   $("foot-chapter").textContent = current?.chapter || "";
   // ReadEra-style reader: "Chapter 11 • page 14/15" up top, "227 of 1918" down below.
   const cp = chapterPages ? `page ${chapterPages.page}/${chapterPages.total}` : "";
   $("re-where").textContent = [current?.chapter, cp].filter(Boolean).join(" • ");
-  const total = pdfView ? pdfView.pages : book?.locations?.length() || 0;
-  const now = pdfView ? pdfView.position().page : total && current ? book.locations.locationFromCfi(current.cfi) + 1 : 0;
   $("re-pages").textContent = total ? `${now} of ${total}` : pct(current?.percent);
   $("foot-percent").textContent = pct(current?.percent);
   $("progress-slider").value = Math.round((current?.percent || 0) * 1000);
@@ -823,65 +785,88 @@ async function saveProgress() {
 
 function flattenToc(items, depth = 0, out = []) {
   for (const it of items || []) {
-    out.push({ label: (it.label || "").trim(), href: it.href, depth });
+    const label = (typeof it.label === "string" ? it.label : String(it.label ?? "")).trim();
+    let index = null;
+    try { const r = view?.book?.resolveHref?.(it.href); if (r && typeof r.then !== "function") index = r.index ?? null; } catch { /* unresolvable */ }
+    out.push({ label, href: it.href, depth, index });
     flattenToc(it.subitems, depth + 1, out);
   }
   return out;
 }
 
-/** The contents entry for a spine file (the first one pointing into it). */
-function tocEntryFor(href) {
-  if (!href) return null;
-  const base = href.split("#")[0];
-  return toc.find((t) => {
-    const h = (t.href || "").split("#")[0];
-    return h && (h === base || base.endsWith(h) || h.endsWith(base));
-  }) || null;
+/** PDFs: foliate resolves outline links asynchronously, so look up each entry's page once. */
+async function resolvePdfToc() {
+  for (const t of toc) {
+    if (t.index != null || !t.href) continue;
+    try { t.index = (await view.book.resolveHref(t.href))?.index ?? null; } catch { /* leave it */ }
+  }
 }
-/** PDFs: the last outline entry that starts on or before the page. */
-function pdfTocFor(page) {
+
+/** The contents entry for foliate's current TOC item. */
+function tocEntryFor(item) {
+  if (!item) return null;
+  return toc.find((t) => t.href === item.href) || toc.find((t) => t.label === item.label) || null;
+}
+/** PDFs: the last outline entry that starts on or before the page (0-based). */
+function pdfTocFor(index) {
   let hit = null;
-  for (const t of toc) if (t.page <= page && (!hit || t.page >= hit.page)) hit = t;
+  for (const t of toc) if (t.index != null && t.index <= index && (!hit || t.index >= hit.index)) hit = t;
   return hit;
 }
-/** The chapter title for a CFI, an href or (PDF) a page number. */
+/** The chapter title for a stored place. */
 function chapterFor(where) {
-  if (pdfView) return pdfTocFor(typeof where === "number" ? where : pdfengine.parsePos(where)?.page || 0)?.label || "";
+  if (pdf) return pdfTocFor((target(where) ?? 0))?.label || "";
   try {
-    const s = String(where || "");
-    const sec = s.startsWith("epubcfi(") ? book.spine.get(s) : null;
-    return tocEntryFor(sec ? sec.href : s)?.label || "";
+    const r = view.resolveNavigation(target(where));
+    if (r?.index == null) return "";
+    let hit = null;
+    for (const t of toc) if (t.index != null && t.index <= r.index && (!hit || t.index >= hit.index)) hit = t;
+    return hit?.label || "";
   } catch { return ""; }
 }
 
-/** The page each contents entry starts on: PDFs know it; EPUBs, once the location index exists. */
+/** The page each contents entry starts on. */
 function tocPageNo(t) {
-  if (t.page) return t.page;
-  const locs = book?.locations?.length() ? book.locations._locations || [] : [];
-  if (!locs.length || !t.href) return "";
-  const sec = book.spine.get(t.href.split("#")[0]);
-  if (!sec?.cfiBase) return "";
-  const i = locs.findIndex((c) => c.startsWith(`epubcfi(${sec.cfiBase}!`));
-  return i >= 0 ? i + 1 : "";
+  if (t.index == null) return "";
+  if (pdf) return t.index + 1;
+  const total = loc?.location?.total;
+  const fr = view?.getSectionFractions?.()[t.index];
+  if (!total || fr == null) return "";
+  return Math.min(total, Math.floor(fr * total) + 1);
 }
 
-function renderToc() {
+async function renderToc() {
+  if (pdf) await resolvePdfToc();
   const list = $("toc-list");
   list.innerHTML = toc.length
     ? toc.map((t, i) => {
         const n = tocPageNo(t);
         return `<a href="#" data-i="${i}" style="padding-left:${14 + t.depth * 16}px"><span>${escapeHtml(t.label)}</span>${n ? `<small>${n}</small>` : ""}</a>`;
-      }
-      ).join("")
+      }).join("")
     : `<p class="hint">This book has no table of contents.</p>`;
   for (const a of list.querySelectorAll("a")) {
     a.addEventListener("click", (e) => {
       e.preventDefault();
       const t = toc[Number(a.dataset.i)];
-      finder.go(t.page ? pdfengine.pos(t.page) : t.href);
+      finder.go(t.href);
       $("toc-drawer").classList.add("hidden");
     });
   }
+  if (current) updateFooter();
+}
+
+/** Where each top-level chapter starts, 0–1. */
+function chapterMarks() {
+  if (!toc.length) return [];
+  const n = pdf ? Math.max(1, (view?.book?.sections.length || 1) - 1) : 0;
+  const fr = pdf ? null : view?.getSectionFractions?.() || [];
+  const out = [];
+  for (const t of toc) {
+    if (t.depth !== 0 || t.index == null) continue;
+    const p = pdf ? t.index / n : fr[t.index];
+    if (p > 0.001 && p < 0.999) out.push(p);
+  }
+  return out.length > 80 ? [] : [...new Set(out)];
 }
 
 // ---------------------------------------------------------- appearance
@@ -890,23 +875,20 @@ async function setFontSize(v) {
   const size = Math.min(250, Math.max(60, v));
   await settings.update({ fontSize: size });
   $("font-size-label").textContent = `${size}%`;
-  holdAnchor();
-  rendition?.themes.fontSize(`${size}%`);
-  checkAnchor(300);
+  applyStyles();
 }
 
 function setZoom(z) {
-  if (!pdfView) return;
-  const now = pdfView.setZoom(z);
-  $("zoom-label").textContent = `${Math.round(now * 100)}%`;
+  if (!pdf) return;
+  pdfZoom = Math.min(5, Math.max(0.5, z));
+  view?.renderer?.setAttribute("scale-factor", String(Math.round(pdfZoom * 100)));
+  $("zoom-label").textContent = `${Math.round(pdfZoom * 100)}%`;
 }
 
 async function setTheme(name) {
-  const wasNight = NIGHT.has(settings.get().theme);
   await settings.update({ theme: name, [NIGHT.has(name) ? "nightTheme" : "dayTheme"]: name });
   document.body.dataset.rtheme = name;
-  rendition?.themes.select(name);
-  if (wasNight !== NIGHT.has(name)) marks.retint();
+  applyStyles(); // PDFs are tinted in styles.css
 }
 
 function applyBrightness(b) {
@@ -928,32 +910,6 @@ async function awake(on) {
   } catch { wakeLock = null; }
 }
 
-/** Where each top-level chapter starts, 0–1 (exact once the location index exists). */
-function chapterMarks() {
-  if (!toc.length) return [];
-  if (pdfView) {
-    const n = Math.max(1, pdfView.pages - 1);
-    const out = toc.filter((t) => t.depth === 0).map((t) => (t.page - 1) / n).filter((p) => p > 0.001 && p < 0.999);
-    return out.length > 80 ? [] : [...new Set(out)];
-  }
-  if (!book) return [];
-  const locs = book.locations?.length() ? book.locations._locations || [] : [];
-  const n = book.spine?.length || 1;
-  const out = [];
-  for (const t of toc) {
-    if (t.depth !== 0 || !t.href) continue;
-    const sec = book.spine.get(t.href.split("#")[0]);
-    if (!sec) continue;
-    let p = sec.index / n;
-    if (locs.length && sec.cfiBase) {
-      const i = locs.findIndex((c) => c.startsWith(`epubcfi(${sec.cfiBase}!`));
-      if (i >= 0) p = i / locs.length;
-    }
-    if (p > 0.001 && p < 0.999) out.push(p);
-  }
-  return out.length > 80 ? [] : [...new Set(out)];
-}
-
 /** Alignment and hyphenation: "auto" justifies in the ReadEra look and keeps the publisher's otherwise. */
 function alignCss() {
   const { textAlign = "auto", hyphens = true } = settings.get();
@@ -966,31 +922,41 @@ function alignCss() {
   return rules.join("\n");
 }
 
-/** ReadEra look: little top and bottom padding. */
-function readeraCss() {
-  if (!readera.readerOn()) return "";
-  return "body { padding-top: 12px !important; padding-bottom: 4px !important; }";
-}
-
 /** Fonts we ship (they work offline). Comfortaa: SIL Open Font License, see public/fonts/. */
 const FONT_FACES = () => {
   const url = (f) => new URL(`fonts/${f}`, document.baseURI).href;
   return `@font-face { font-family: "Comfortaa"; src: url("${url("Comfortaa.ttf")}") format("truetype"); font-weight: 300 700; font-display: swap; }`;
 };
 
-function userCss() {
-  const { fontFamily, lineHeight, embeddedFonts } = settings.get();
+/** The stylesheet foliate-js puts into every chapter: theme, text size, font, spacing, alignment. */
+function bookCss() {
+  const s = settings.get();
+  const t = THEMES[s.theme] || THEMES.light;
+  const { fontFamily, lineHeight, embeddedFonts } = s;
   const rules = [];
   // With Embedded on, the chosen font is woven into the book's own styles instead (weaveFonts),
   // so the book's built-in fonts keep their places; here it only sets the page's default.
   if (fontFamily && embeddedFonts === false) rules.push(`font-family: ${fontFamily} !important;`);
   if (lineHeight) rules.push(`line-height: ${lineHeight} !important;`);
-  const extra = `${FONT_FACES()}\n${fontFamily && embeddedFonts !== false ? `body { font-family: ${fontFamily} !important; }` : ""}\n${readeraCss()}\n${alignCss()}`;
-  if (!rules.length) return extra;
-  return `body, p, div, span, li, blockquote, td, h1, h2, h3, h4, h5, h6 { ${rules.join(" ")} }\n${extra}`;
+  return [
+    FONT_FACES(),
+    `html { color-scheme: ${NIGHT.has(s.theme) ? "dark" : "light"}; }`,
+    `html, body { background: ${t.bg} !important; color: ${t.fg} !important; }`,
+    `body { font-size: ${s.fontSize}% !important; }`,
+    `a, a:link, a:visited { color: ${t.link} !important; }`,
+    `::selection { background: rgba(66, 133, 244, 0.35); }`,
+    `img, svg, video { max-width: 100%; }`,
+    fontFamily && embeddedFonts !== false ? `body { font-family: ${fontFamily} !important; }` : "",
+    rules.length ? `body, p, div, span, li, blockquote, td, h1, h2, h3, h4, h5, h6 { ${rules.join(" ")} }` : "",
+    alignCss(),
+  ].filter(Boolean).join("\n");
 }
 
-const OURS = new Set(["kls-user-style"]);
+function applyStyles() {
+  if (!view?.renderer || pdf) return;
+  view.renderer.setStyles?.(bookCss());
+}
+
 const famName = (v) => String(v || "").trim().replace(/^["']|["']$/g, "").toLowerCase();
 
 /**
@@ -1001,7 +967,8 @@ const famName = (v) => String(v || "").trim().replace(/^["']|["']$/g, "").toLowe
  */
 function weaveFonts(doc) {
   const { fontFamily, embeddedFonts } = settings.get();
-  const sheets = [...doc.styleSheets].filter((s) => !OURS.has(s.ownerNode?.id));
+  // foliate-js puts its own two <style> elements (ours, via setStyles) last in <head>.
+  const sheets = [...doc.styleSheets].filter((s) => !s.ownerNode?.textContent?.includes("color-scheme:"));
   const rulesOf = (s) => { try { return s.cssRules ? [...s.cssRules] : []; } catch { return []; } };
   const walk = (list, fn) => { for (const r of list) { fn(r); if (r.cssRules) walk([...r.cssRules], fn); } };
   if (embeddedFonts === false) {
@@ -1027,44 +994,22 @@ function weaveFonts(doc) {
   }
 }
 
-/** Links to websites inside a book would turn the reader into a browser (and on phones
- *  without one, like the Commodore Callback, strand you there), so they're disabled. */
-function guardLinks(contents) {
-  contents.document.addEventListener("click", (e) => {
-    const a = e.target.closest?.("a[href]");
-    if (a && /^(https?:|mailto:|tel:)/i.test(a.getAttribute("href"))) {
-      e.preventDefault(); e.stopPropagation();
-      toast("Links to websites are turned off in books");
-    } else if (a) {
-      finder.noteJump(); // a footnote or cross-reference: leave a way back
-      userMoved();
-    }
-  }, true);
-}
-
-function injectUserStyle(contents) {
-  const doc = contents.document;
-  let el = doc.getElementById("kls-user-style");
-  if (!el) {
-    el = doc.createElement("style");
-    el.id = "kls-user-style";
-    doc.head.appendChild(el);
-  }
-  el.textContent = userCss();
-  if (!el.dataset.woven) { el.dataset.woven = "1"; try { weaveFonts(doc); } catch (err) { console.warn("fonts", err); } }
-  // Hyphenation needs a language; borrow the book's when the chapter file has none.
-  const html = doc.documentElement;
-  if (!html.getAttribute("lang") && !html.getAttribute("xml:lang")) {
-    const lang = book?.packaging?.metadata?.language;
-    if (lang) html.setAttribute("lang", lang);
-  }
-}
-
-function applyUserStyle() {
-  if (!rendition) return;
-  holdAnchor();
-  checkAnchor(300);
-  for (const c of rendition.getContents()) injectUserStyle(c);
+/** Open the book again where you are (after a font change, which rewrites the book's own styles). */
+async function rebuild() {
+  if (!view || !meta) return;
+  const at = anchorCfi || current?.cfi;
+  const buf = await db.get("files", meta.id);
+  if (!buf) return;
+  try { view.close(); } catch { /* ignore */ }
+  view.remove();
+  view = null;
+  loc = null;
+  await mountView(buf);
+  // The text is laid out anew, so the page holding your place starts a little earlier: keep the
+  // exact place until you turn a page, or each font change would move you back a bit.
+  anchorCfi = at;
+  anchored = !pdf && !scrolled() && !!at;
+  await showAt(at);
 }
 
 export function syncPanelState() {
@@ -1073,7 +1018,7 @@ export function syncPanelState() {
   $("font-family").value = s.fontFamily;
   $("embedded-fonts").checked = s.embeddedFonts !== false;
   $("line-height").value = s.lineHeight;
-  $("page-turn").value = s.pageTurn || "slide";
+  $("page-turn").value = turnMode();
   $("flow").value = s.flow || "paginated";
   $("text-align").value = s.textAlign || "auto";
   $("margins").value = s.margin || "m";
@@ -1082,74 +1027,32 @@ export function syncPanelState() {
   $("brightness").value = String(Math.round((s.brightness ?? 1) * 100));
   $("re-bright").value = $("brightness").value;
   $("page-turn-row").hidden = s.flow === "scrolled";
-  $("zoom-label").textContent = `${Math.round((pdfView?.zoom || 1) * 100)}%`;
+  $("zoom-label").textContent = `${Math.round(pdfZoom * 100)}%`;
   applyBrightness(s.brightness ?? 1);
-}
-
-// ------------------------------------------------------------ gestures
-
-function wireGestures(mode) {
-  // In slide mode the page follows the finger (pageturn.js); otherwise a swipe turns the page.
-  if (mode !== "slide" && !scrolled()) {
-    let startX = 0, startY = 0, startT = 0;
-    rendition.on("touchstart", (e) => {
-      const t = e.changedTouches[0];
-      startX = t.screenX; startY = t.screenY; startT = Date.now();
-    });
-    rendition.on("touchend", (e) => {
-      const t = e.changedTouches[0];
-      const dx = t.screenX - startX, dy = t.screenY - startY;
-      if (Date.now() - startT < 600 && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-        turn(dx < 0 ? 1 : -1);
-      }
-    });
-  }
-  rendition.on("click", (e) => {
-    // Center tap toggles the bars; ignore taps on links or while selecting text.
-    if (e.target?.closest?.("a")) return;
-    const sel = e.view?.getSelection?.();
-    if (sel && String(sel).length) return;
-    if (marks.selectionOpen()) { marks.hideSelection(); return; }
-    // Scroll mode has no tap zones over the page (they'd block scrolling): the frame decides.
-    if (scrolled()) {
-      const fr = e.view?.frameElement?.getBoundingClientRect?.();
-      const x = (fr ? fr.left : 0) + e.clientX;
-      const w = $("viewer-wrap").clientWidth || window.innerWidth;
-      if (x < w * 0.3) return turn(-1);
-      if (x > w * 0.7) return turn(1);
-    }
-    toggleBars();
-  });
-  // Keys pressed while the book's frame has focus.
-  rendition.on("keydown", (e) => hooks.onKey(e));
 }
 
 // ---------------------------------------------------------------- close
 
 export async function closeBook() {
-  clearTimeout(turnCheck);
-  clearTimeout(anchorTimer);
-  turner?.finish(); // land a sliding page, or put back a half-dragged one (the back swipe)
-  syncLocation(); // the page actually on screen, not merely the last one reported
   const moved = current && current.cfi !== lastSavedCfi && (!holdSaves || current.cfi !== initialCfi);
   if (moved) await saveProgress();
   sync.flushNow();
   marks.unload();
   finder.unload();
   if (sheet.isOpen()) sheet.close(null);
-  turner?.destroy(); turner = null;
-  try { rendition?.destroy(); } catch { /* ignore */ }
-  try { book?.destroy(); } catch { /* ignore */ }
-  try { pdfView?.destroy(); } catch { /* ignore */ }
-  pdfengine.close(pdfDoc);
-  book = rendition = meta = current = pdfDoc = pdfView = null;
+  try { view?.close(); } catch { /* ignore */ }
+  try { view?.book?.destroy?.(); } catch { /* ignore */ }
+  view?.remove();
+  view = null;
+  meta = current = loc = null;
+  pdf = false;
   anchorCfi = null; anchored = false;
   awake(false);
   chapterPages = null;
   fullScreen(false);
-  for (const t of fitTimers) clearTimeout(t);
   hideBanner();
-  document.body.classList.remove("immersive", "pdf-mode", "flow-scroll");
+  document.body.classList.remove("immersive", "pdf-mode", "flow-scroll", "foliate");
+  $("viewer").innerHTML = "";
   $("toc-drawer").classList.add("hidden");
   $("aa-panel").classList.add("hidden");
   $("foot-page").textContent = "";
