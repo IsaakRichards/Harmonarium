@@ -14,7 +14,7 @@
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --apk",
     "build:sailfish": "vite build --outDir sailfish/www --emptyOutDir",
-    "test:reader": "vite build && node tests/e2e/reader.mjs && INSET=1 DPRS=2.625 FONTS=100,170 node tests/e2e/clip.mjs"
+    "test:reader": "vite build && node tests/e2e/reader.mjs && INSET=1 DPRS=2.625 FONTS=100,170 node tests/e2e/clip.mjs && EARLY=1 DPRS=2.625 FONTS=100,170 node tests/e2e/clip.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

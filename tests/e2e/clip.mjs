@@ -4,6 +4,8 @@
 //   npm run build && node tests/e2e/clip.mjs
 //   INSET=1  first shrink the page's frame without a window resize event, as a phone's safe-area
 //            margins do when Android's bars hide (what used to cut off the bottom line)
+//   EARLY=1  change the frame's size again and again while the book is still opening, as Android
+//            does when it hides its bars just as a book comes up (what cut off the first page)
 //   DPRS=1,2.625  FONTS=100,140  pick pixel densities and text sizes
 
 import { chromium } from "playwright";
@@ -66,7 +68,7 @@ function measure() {
 
 const book = await longEpub();
 const browser = await chromium.launch();
-const SIZES = process.env.INSET ? [[412, 860], [393, 851], [360, 740]] : [[412, 860], [393, 851], [360, 740], [412, 915], [384, 789]];
+const SIZES = process.env.INSET || process.env.EARLY ? [[412, 860], [393, 851], [360, 740]] : [[412, 860], [393, 851], [360, 740], [412, 915], [384, 789]];
 const DPRS = (process.env.DPRS || "1,2.625").split(",").map(Number);
 const FONTS = (process.env.FONTS || "100,120,140,170").split(",").map(Number);
 let bad = 0, total = 0;
@@ -86,8 +88,20 @@ for (const dpr of DPRS) for (const [w, h] of SIZES) for (const fs of FONTS) {
   await page.reload();
   await page.setInputFiles("#file-input", { name: "clip.epub", mimeType: "application/epub+zip", buffer: book });
   await page.waitForSelector(".lib-card", { timeout: 15000 });
+  if (process.env.EARLY) {
+    // Frame changes with no window resize event (safe-area margins) at moments spread through the
+    // opening, ending on the full screen the book is read at.
+    await page.evaluate(() => {
+      const steps = [[30, 24, 48], [140, 0, 0], [260, 24, 31], [420, 0, 48], [600, 24, 0], [850, 0, 0]];
+      for (const [t, top, bottom] of steps) setTimeout(() => { const v = document.getElementById("viewer"); v.style.top = `${top}px`; v.style.bottom = `${bottom}px`; }, t);
+    });
+  }
   await page.click(".lib-open");
-  await page.waitForSelector("#viewer iframe", { timeout: 15000 });
+  if (process.env.EARLY) {
+    // ...and the window itself growing as the bars go, in steps, while the pages are laid out.
+    for (const [t, dh] of [[80, -56], [200, -24], [330, -40], [520, 0]]) { await page.waitForTimeout(t > 80 ? 110 : 80); await page.setViewportSize({ width: w, height: h + dh }); }
+  }
+  await page.waitForSelector("#viewer iframe", { timeout: 15000, state: "attached" });
   await page.waitForTimeout(2200);
   if (process.env.INSET) {
     // As on a phone whose safe-area margins change when Android's bars hide: the page's frame
@@ -99,6 +113,7 @@ for (const dpr of DPRS) for (const [w, h] of SIZES) for (const fs of FONTS) {
   for (let i = 0; i < 8; i++) {
     const m = await page.evaluate(measure);
     total++;
+    if (!m.frame || m.frame.h < 50) m.clipped.push({ blank: true, frame: m.frame || null });
     if (m.clipped.length) { pagesBad++; bad++; worst = worst || { page: i + 1, ...m, clipped: m.clipped.slice(0, 3) }; }
     await page.click("#tap-next", { force: true });
     await page.waitForTimeout(420);
