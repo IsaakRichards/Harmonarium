@@ -65,6 +65,8 @@ page.on("pageerror", (e) => errors.push(String(e)));
 // Known noise: the web fonts this test blocks; the engine's iframe sandbox notice; and the book
 // scripts this test plants, which the reader's policy blocks on purpose.
 const BENIGN = [/Failed to load resource/, /allow-scripts and allow-same-origin/, /Content Security Policy/];
+const consoleLog = []; // everything the page says, shown when a check about a PDF fails
+page.on("console", (m) => consoleLog.push(`${m.type()}: ${m.text()}`));
 page.on("console", (m) => { if (m.type() === "error" && !BENIGN.some((re) => re.test(m.text()))) errors.push("console: " + m.text()); });
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 
@@ -283,7 +285,9 @@ await page.waitForFunction(() => [...document.querySelectorAll(".lib-fmt")].some
 await page.selectOption("#lib-section", "documents").catch(() => {});
 await page.waitForTimeout(500);
 const pdfCard = page.locator(".lib-card", { hasText: "Pages of a Document" });
-check("A PDF imports onto the shelf", (await pdfCard.count()) === 1, await page.innerText("#library").catch(() => ""));
+const pdfImported = (await pdfCard.count()) === 1;
+check("A PDF imports onto the shelf", pdfImported, pdfImported ? "" : `${await page.textContent("#toast").catch(() => "")}\n${consoleLog.slice(-25).join("\n")}`);
+if (!pdfImported) throw new Error("The PDF didn't import; see the page's messages above");
 await pdfCard.locator(".lib-open").click();
 await page.waitForSelector("#viewer iframe", { timeout: 20000, state: "attached" });
 await page.waitForTimeout(2500);
