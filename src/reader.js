@@ -210,12 +210,12 @@ export function init(h) {
     }).observe($("viewer"));
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { awake(!!meta); fullScreen(!!meta); return; }
+    if (document.visibilityState === "visible") { awake(!!meta); fullScreen(!!meta); if (meta) fitGuard(); return; }
     // Leaving the app (home button, switching apps): save the exact page now, as Android may close us.
     if (meta && !holdSaves) { syncLocation(); if (current && current.cfi !== lastSavedCfi) saveProgress(); }
     sync.flushNow();
   });
-  window.addEventListener("harmonarium:readera", () => fullScreen(!!meta));
+  window.addEventListener("harmonarium:readera", () => { fullScreen(!!meta); if (meta) fitGuard(); });
   applyBrightness(settings.get()?.brightness ?? 1);
 }
 
@@ -443,8 +443,7 @@ export async function open(id) {
 
     anchorCfi = startAt;
     anchored = !!anchorCfi && !scrolled();
-    await rendition.display(startAt || undefined);
-    tuneManager();
+    await showFirst(startAt);
 
     if (!savedLocations) {
       book.locations.generate(1600).then(async () => {
@@ -462,6 +461,7 @@ export async function open(id) {
   await db.put("books", { ...meta, lastOpenedAt: Date.now() });
   awake(true);
   fullScreen(true);
+  fitGuard();
   checkRemote(local); // runs in the background, then releases holdSaves
   return true;
 }
@@ -528,22 +528,93 @@ function pageGap() {
 }
 const wantGap = () => (readera.readerOn() || (settings.get().margin && settings.get().margin !== "m") ? pageGap() : undefined);
 
+/** Put the book's first page up. If the frame changes size meanwhile (Android hides its bars as a
+ *  book opens), epub.js used to throw the half-built page away: a new book stayed blank, and a
+ *  book with a saved place came up laid out for the old size, its bottom line cut off. So any
+ *  re-layout asked for now waits, and runs once the page is up. */
+let showing = false, relayoutWanted = false;
+async function showFirst(at) {
+  showing = true;
+  relayoutWanted = false;
+  try { await rendition.display(at || undefined); }
+  finally { showing = false; }
+  tuneManager();
+  if (relayoutWanted) relayout(true);
+  fitGuard();
+}
+
 let relayoutTimer = 0;
 function scheduleRelayout() {
   clearTimeout(relayoutTimer);
   relayoutTimer = setTimeout(() => { if (rendition || pdfView) relayout(); }, 120);
 }
 
-/** Recalculate margins and re-paginate, e.g. after rotating the phone. */
-function relayout() {
+/** Recalculate margins and re-paginate, e.g. after rotating the phone. `force` lays the pages out
+ *  again even when epub.js believes the size hasn't changed. */
+function relayout(force = false) {
   if (pdfView) { pdfView.resize(); return; }
   if (!rendition) return;
+  if (showing) { relayoutWanted = true; return; }
   const gap = wantGap();
   rendition.settings.gap = gap;
   if (rendition.manager?.settings) rendition.manager.settings.gap = gap;
+  if (force && rendition.manager) rendition.manager._stageSize = undefined;
   holdAnchor();
   rendition.resize(undefined, undefined, anchorCfi || undefined);
   checkAnchor(400);
+  if (!force) fitGuard();
+}
+
+/** Are the pages laid out for the frame they are shown in? As a book opens on Android, the bars
+ *  hide and the frame changes size, sometimes while epub.js is still laying out the first page;
+ *  that page then kept its old height and ran its bottom line past the screen until something
+ *  else (leaving the app and coming back) re-laid it out. */
+function pageFits() {
+  if (!rendition || pdfView) return true;
+  const m = rendition.manager, v = $("viewer");
+  if (!m?.stage || !v) return true;
+  const r = v.getBoundingClientRect();
+  if (r.width < 50 || r.height < 50) return true; // not on screen
+  // The size epub.js laid the pages out for, against the size of its frame now.
+  const s = m._stageSize, now = m.stage.size();
+  if (s && now && (Math.abs(s.width - now.width) > 1 || Math.abs(s.height - now.height) > 1)) return false;
+  if (scrolled()) return true;
+  if (!m.views?.length) return false; // nothing on screen at all
+  const left = Math.max(r.left, 0) + 1, right = Math.min(r.right, window.innerWidth) - 1;
+  const bottom = Math.min(r.bottom, window.innerHeight) + 0.5;
+  for (const f of v.querySelectorAll("iframe")) {
+    const fr = f.getBoundingClientRect(), doc = f.contentDocument;
+    if (fr.right <= left || fr.left >= right || !doc?.body) continue;
+    if (fr.bottom <= bottom) continue; // the whole page is inside the frame
+    // The page is taller than the frame: is any line of what's on screen past the bottom?
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT), range = doc.createRange();
+    while (walker.nextNode()) {
+      const n = walker.currentNode;
+      if (!n.textContent.trim()) continue;
+      range.selectNodeContents(n);
+      for (const q of range.getClientRects()) {
+        if (q.width < 1 || fr.left + q.right <= left || fr.left + q.left >= right) continue;
+        if (fr.top + q.bottom > bottom) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** Check a few times over the next seconds that the pages fit; lay them out again if not. */
+let fitTimers = [];
+function fitGuard() {
+  for (const t of fitTimers) clearTimeout(t);
+  let fixes = 0;
+  fitTimers = [250, 700, 1400, 2600, 4500].map((ms) => setTimeout(() => {
+    if (!rendition || pdfView || turner?.busy() || fixes >= 2) return;
+    let ok = true;
+    try { ok = pageFits(); } catch { /* a page is being swapped; the next check will see */ }
+    if (ok) return;
+    fixes++;
+    if (rendition.manager?.views?.length) relayout(true);
+    else rendition.display(anchorCfi || current?.cfi || initialCfi || undefined); // blank: put the page back
+  }, ms));
 }
 
 /** Create the rendition for the current page-turn mode (slide needs epub.js's continuous manager). */
@@ -582,6 +653,11 @@ function makeRendition() {
     for (const img of contents.document.images || []) if (!img.complete) img.addEventListener("load", () => checkAnchor(120), { once: true });
     contents.on?.("resize", () => checkAnchor(120));
   });
+  // Re-layouts are ours alone (scheduleRelayout), so none can land while the first page is built.
+  rendition.on("attached", () => {
+    const st = rendition?.manager?.stage;
+    if (st?.resizeFunc) window.removeEventListener("resize", st.resizeFunc);
+  });
   wireGestures(mode);
   rendition.on("relocated", onRelocated);
   rendition.on("selected", (cfiRange, contents) => marks.onSelected(cfiRange, contents));
@@ -604,8 +680,7 @@ async function rebuild() {
   $("viewer").innerHTML = "";
   document.body.classList.toggle("flow-scroll", scrolled());
   makeRendition();
-  await rendition.display(cfi || undefined);
-  tuneManager();
+  await showFirst(cfi);
   marks.applyHighlights();
 }
 
@@ -1072,6 +1147,7 @@ export async function closeBook() {
   awake(false);
   chapterPages = null;
   fullScreen(false);
+  for (const t of fitTimers) clearTimeout(t);
   hideBanner();
   document.body.classList.remove("immersive", "pdf-mode", "flow-scroll");
   $("toc-drawer").classList.add("hidden");
