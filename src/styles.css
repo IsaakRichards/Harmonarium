@@ -1118,8 +1118,8 @@ html[data-re-reader] .re-info {
 }
 html[data-re-reader] .re-info > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 html[data-re-reader] #re-book { font-size: 15px; font-weight: 700; }
-html[data-re-reader] #re-author, html[data-re-reader] #re-where { opacity: 0.8; }
-html[data-re-reader] #re-author:empty { display: none; }
+html[data-re-reader] #re-author, html[data-re-reader] #re-where, html[data-re-reader] #re-left { opacity: 0.8; }
+html[data-re-reader] #re-author:empty, html[data-re-reader] #re-left:empty { display: none; }
 
 /* brightness strip */
 html[data-re-reader] .re-light {

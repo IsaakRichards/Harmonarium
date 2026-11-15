@@ -114,7 +114,17 @@ check("A tap in the middle shows or hides the bars", imm0 !== (await page.evalua
 await page.evaluate(() => document.body.classList.add("immersive"));
 
 async function setMode(mode) { await setSelect("page-turn", mode); await page.waitForTimeout(200); }
-check("Slide mode animates the turns", await page.evaluate(() => document.querySelector("foliate-view").renderer.hasAttribute("animated")));
+check("Slide mode slides a snapshot of the page off (the engine's layered turn)", await page.evaluate(() => { const r = document.querySelector("foliate-view").renderer; return r.hasAttribute("animated") && r.getAttribute("turn-style") === "slide"; }));
+const ps = await cfi();
+await page.keyboard.press("ArrowRight");
+await page.waitForTimeout(700);
+check("…and turns the page", (await cfi()) !== ps, `${ps} → ${await cfi()}`);
+await setMode("push");
+check("Push mode moves both pages together", await page.evaluate(() => { const r = document.querySelector("foliate-view").renderer; return r.hasAttribute("animated") && !r.hasAttribute("turn-style"); }));
+const pp = await cfi();
+await page.keyboard.press("ArrowRight");
+await page.waitForTimeout(700);
+check("…and turns the page", (await cfi()) !== pp, `${pp} → ${await cfi()}`);
 await setMode("curl");
 check("Curl mode asks the engine for its page curl", await page.evaluate(() => document.querySelector("foliate-view").renderer.getAttribute("turn-style") === "curl"));
 await setMode("fade");
@@ -154,8 +164,14 @@ await page.click("#re-bm");
 await page.waitForTimeout(400);
 check("The bookmark button bookmarks the page", await page.evaluate(() => document.getElementById("btn-bm").classList.contains("on")));
 check("…and a ribbon marks it", await page.isVisible("#bm-ribbon"));
-check("ReadEra-style top bar shows the chapter and its pages", /page \d+\/\d+/.test(await whereNow()), await whereNow());
+check("ReadEra-style top bar shows the chapter and its pages", /^Chapter \d+ - page \d+ \/ \d+$/.test(await whereNow()), await whereNow());
 check("…and the bottom bar the pages of the book", /\d+ of \d+/.test(await page.textContent("#re-pages")), await page.textContent("#re-pages"));
+{
+  const [, n, total] = /page (\d+) \/ (\d+)/.exec(await whereNow()) || [];
+  const want = Number(total) - Number(n);
+  const shown = await page.textContent("#re-left");
+  check("…and under it how many pages are left in the chapter", shown === (want === 0 ? "Last page of chapter" : `${want} page${want === 1 ? "" : "s"} left in chapter`), `${await whereNow()} · ${shown}`);
+}
 await page.evaluate(() => document.body.classList.add("immersive"));
 await page.waitForTimeout(400);
 check("Hidden bars leave nothing over the page", !(await page.isVisible("#reader-bar")) && !(await page.isVisible("#reader-foot")) && !(await page.isVisible("#re-light")));

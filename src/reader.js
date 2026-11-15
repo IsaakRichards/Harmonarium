@@ -24,7 +24,7 @@ const THEMES = {
   black: { bg: "#000000", fg: "#bdbab3", link: "#9db4ff" },
 };
 const MARGIN = { s: 0.55, m: 1, l: 1.7, xl: 2.6 };
-export const TURNS = ["slide", "curl", "fade", "none"];
+export const TURNS = ["slide", "push", "curl", "fade", "none"];
 
 let view = null;      // the <foliate-view> element
 let meta = null;      // our stored book record
@@ -380,6 +380,7 @@ export async function open(id) {
   $("re-author").textContent = meta.author || "";
   $("re-where").textContent = "";
   $("re-pages").textContent = "";
+  $("re-left").textContent = "";
   $("re-light").classList.toggle("folded", settings.get().lightStrip === false);
   // ReadEra opens a book full-screen; a tap in the middle brings the toolbars up.
   if (readera.readerOn()) document.body.classList.add("immersive");
@@ -643,9 +644,15 @@ function applyLayout() {
     r.setAttribute("spread", window.innerWidth >= 900 && !scrolled() ? "auto" : "none");
     return;
   }
+  // Slide and Curl use the engine's layered turns (as Readest does): the outgoing page is
+  // snapshotted and only that screen-sized picture moves, over the still new page. Moving the
+  // chapter itself means sliding a strip tens of thousands of pixels wide, which stutters on
+  // phones. Webviews without View Transitions get the engine's plain slide instead.
+  // Push moves the chapter itself, both pages together (Readest's default).
   const mode = turnMode();
-  r.toggleAttribute("animated", mode === "slide" || mode === "curl");
-  if (mode === "curl") r.setAttribute("turn-style", "curl"); else r.removeAttribute("turn-style");
+  const layered = mode === "slide" || mode === "curl";
+  r.toggleAttribute("animated", layered || mode === "push");
+  if (layered) r.setAttribute("turn-style", mode); else r.removeAttribute("turn-style");
   const side = Math.round(pageGap() / 2);
   const tight = readera.readerOn();
   r.setAttribute("margin-left", `${side}px`);
@@ -763,14 +770,25 @@ function updateFooter() {
   const now = pageNow();
   $("foot-page").textContent = total ? `${now} / ${total}` : "";
   $("foot-chapter").textContent = current?.chapter || "";
-  // ReadEra-style reader: "Chapter 11 • page 14/15" up top, "227 of 1918" down below.
-  const cp = chapterPages ? `page ${chapterPages.page}/${chapterPages.total}` : "";
-  $("re-where").textContent = [current?.chapter, cp].filter(Boolean).join(" • ");
+  // ReadEra-style reader: the chapter and its pages up top, "227 of 1918" down below.
+  // "Chapter 11: The Name - page 14 / 15", and under it "1 page left in chapter".
+  const cp = chapterPages ? `page ${chapterPages.page} / ${chapterPages.total}` : "";
+  $("re-where").textContent = [current?.chapter, cp].filter(Boolean).join(" - ");
   $("re-pages").textContent = total ? `${now} of ${total}` : pct(current?.percent);
+  $("re-left").textContent = pagesLeft();
   $("foot-percent").textContent = pct(current?.percent);
   $("progress-slider").value = Math.round((current?.percent || 0) * 1000);
   for (const a of $("toc-list").querySelectorAll("a")) a.classList.toggle("current", Number(a.dataset.i) === tocIndex);
   if (readera.readerOn()) readera.track(current?.percent, chapterMarks());
+}
+
+/** "5 pages left in chapter", as Readest shows it (pages of this screen, so it follows the text size). */
+function pagesLeft() {
+  if (!chapterPages) return "";
+  const left = Math.max(0, chapterPages.total - chapterPages.page);
+  const where = pdf && tocIndex < 0 ? "" : " in chapter"; // a PDF without an outline is one long part
+  if (left === 0) return pdf && tocIndex < 0 ? "Last page" : "Last page of chapter";
+  return `${left} page${left === 1 ? "" : "s"} left${where}`;
 }
 
 async function saveProgress() {
