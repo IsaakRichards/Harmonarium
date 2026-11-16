@@ -96,6 +96,7 @@ export function init(h) {
   for (const [id, dir] of [["tap-prev", -1], ["tap-next", 1]]) {
     $(id).addEventListener("click", () => { marks.hideSelection(); turn(dir); });
   }
+  document.addEventListener("click", onTopClick);
   // Mouse wheel / trackpad on desktop turns pages too.
   $("viewer-wrap").addEventListener("wheel", onWheel, { passive: true });
   $("page-turn").addEventListener("change", async (e) => {
@@ -229,17 +230,27 @@ async function dayNight() {
   toast(themeName(settings.get().theme));
 }
 
-/** Turn a page (+1 forward, -1 back) with the chosen animation. */
-let fading = false;
+/** Turn a page (+1 forward, -1 back) with the chosen animation. The engine ignores a turn asked
+ *  for while a page is still turning, so quick taps wait their turn here instead of vanishing. */
+let turning = false;
+const queuedTurns = [];
 async function turn(dir) {
   if (!view?.renderer) return;
   userMoved();
+  if (turning) { if (queuedTurns.length < 4) queuedTurns.push(dir); return; }
+  turning = true;
+  try { await turnOnce(dir); } catch (err) { console.warn("turn", err); } finally {
+    turning = false;
+    const next = queuedTurns.shift();
+    if (next && view) turn(next);
+  }
+}
+
+async function turnOnce(dir) {
   const go = () => (dir > 0 ? view.next() : view.prev());
   if (turnMode() !== "fade" || scrolled() || pdf) return go();
   // Fade: the page dips out and comes back on the new one.
   const el = $("viewer");
-  if (fading) return go();
-  fading = true;
   try {
     el.style.transition = "opacity 110ms ease-in";
     el.style.opacity = "0";
@@ -250,15 +261,22 @@ async function turn(dir) {
     await wait(160);
   } finally {
     el.style.transition = ""; el.style.opacity = "";
-    fading = false;
   }
 }
 
 /** You moved (a turn, a drag, a jump): the page you land on becomes your place. */
 function userMoved() { anchored = false; }
 
+// Swipes and scrolling move the page inside the engine, without going through turn(): the engine
+// says why it moved ("snap" after a swipe, "scroll" while scrolling), and a finger or wheel on
+// the page just before tells it was you, not a re-layout.
+const USER_MOVES = new Set(["snap", "scroll", "container-scroll"]);
+let inputAt = 0;
+const touched = () => { inputAt = Date.now(); };
+
 let wheelAt = 0;
 function onWheel(e) {
+  touched();
   if (pdf || scrolled()) return; // those scroll by themselves
   const d = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
   if (Math.abs(d) < 4 || Date.now() - wheelAt < 350) return;
@@ -561,6 +579,8 @@ function onLoad({ doc, index }) {
     const lang = view?.book?.metadata?.language;
     if (!html.getAttribute("lang") && lang) html.setAttribute("lang", Array.isArray(lang) ? lang[0] : lang);
   }
+  doc.addEventListener("touchstart", touched, { passive: true });
+  doc.addEventListener("pointerdown", touched, { passive: true });
   doc.addEventListener("click", (e) => onPageClick(e, doc));
   doc.addEventListener("wheel", onWheel, { passive: true });
   doc.addEventListener("keydown", (e) => hooks.onKey(e));
@@ -583,22 +603,32 @@ function onPageClick(e, doc) {
   const fr = doc.defaultView?.frameElement?.getBoundingClientRect?.();
   const x = (fr ? fr.left : 0) + e.clientX;
   const wrap = $("viewer-wrap").getBoundingClientRect();
-  const w = wrap.width || window.innerWidth;
-  const rel = x - wrap.left;
   // Let foliate's own click on a highlight (show-annotation) go first.
   setTimeout(() => {
     if (Date.now() - annotationTapAt < 400) return;
-    const edge = readera.readerOn() ? 1 / 3 : 0.3;
-    if (rel < w * edge) {
-      if (!document.body.classList.contains("immersive") && readera.readerOn()) closeOverlays();
-      return turn(-1);
-    }
-    if (rel > w * (1 - edge)) {
-      if (!document.body.classList.contains("immersive") && readera.readerOn()) closeOverlays();
-      return turn(1);
-    }
-    toggleBars();
+    pageTap(x - wrap.left, wrap.width || window.innerWidth);
   }, 0);
+}
+
+/** While a page slides (a View Transition), the browser lays its snapshot over the whole window,
+ *  so taps land on the app's own page instead of the book. Treat those over the book as page taps,
+ *  so quick taps queue up like any others instead of being lost. */
+function onTopClick(e) {
+  if (!view || e.target !== document.documentElement) return;
+  const wrap = $("viewer-wrap").getBoundingClientRect();
+  if (e.clientX < wrap.left || e.clientX > wrap.right || e.clientY < wrap.top || e.clientY > wrap.bottom) return;
+  touched();
+  pageTap(e.clientX - wrap.left, wrap.width || window.innerWidth);
+}
+
+/** A tap at `rel` px across a page `w` px wide: the edges turn, the middle shows or hides the bars. */
+function pageTap(rel, w) {
+  const edge = readera.readerOn() ? 1 / 3 : 0.3;
+  if (rel < w * edge || rel > w * (1 - edge)) {
+    if (!document.body.classList.contains("immersive") && readera.readerOn()) closeOverlays();
+    return turn(rel < w * edge ? -1 : 1);
+  }
+  toggleBars();
 }
 
 /** Text selected in the book: show the Copy / Quote / Note / Find bar over it. */
@@ -717,6 +747,7 @@ function hideBanner() {
 function onRelocate(r) {
   loc = view?.lastLocation;
   if (!loc) return;
+  if (USER_MOVES.has(r.reason) && Date.now() - inputAt < 2500) userMoved();
   const index = r.index ?? loc.section?.current ?? 0;
   let cfi, percent;
   if (pdf) {
@@ -762,9 +793,22 @@ function moved(cfi, percent, chapter, atEnd) {
     hooks.onFinished(meta.title, meta.id);
   }
   updateFooter();
-  if (!holdSaves && cfi !== lastSavedCfi) saveProgress();
+  if (!holdSaves && cfi !== lastSavedCfi) saveSoon();
 }
 
+/** Save once you settle on a page, not on every page you flip past (or every bit you scroll):
+ *  each save is two database writes and a sync entry, which page turns shouldn't wait behind.
+ *  Closing the book or leaving the app saves at once (closeBook, visibilitychange). */
+let saveTimer = 0;
+function saveSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = 0;
+    if (meta && current && !holdSaves && current.cfi !== lastSavedCfi) saveProgress();
+  }, 900);
+}
+
+let markedToc = null; // the contents entry last marked as current
 function updateFooter() {
   const total = pages();
   const now = pageNow();
@@ -778,7 +822,11 @@ function updateFooter() {
   $("re-left").textContent = pagesLeft();
   $("foot-percent").textContent = pct(current?.percent);
   $("progress-slider").value = Math.round((current?.percent || 0) * 1000);
-  for (const a of $("toc-list").querySelectorAll("a")) a.classList.toggle("current", Number(a.dataset.i) === tocIndex);
+  if (markedToc !== tocIndex) {
+    markedToc = tocIndex;
+    for (const a of $("toc-list").querySelectorAll("a.current")) a.classList.remove("current");
+    $("toc-list").querySelector(`a[data-i="${tocIndex}"]`)?.classList.add("current");
+  }
   if (readera.readerOn()) readera.track(current?.percent, chapterMarks());
 }
 
@@ -792,6 +840,8 @@ function pagesLeft() {
 }
 
 async function saveProgress() {
+  clearTimeout(saveTimer);
+  saveTimer = 0;
   if (!current || !meta) return;
   const entry = { bookId: meta.id, ...current, updatedAt: Date.now() };
   lastSavedCfi = current.cfi;
@@ -870,6 +920,7 @@ async function renderToc() {
       $("toc-drawer").classList.add("hidden");
     });
   }
+  markedToc = null; // the list was rebuilt
   if (current) updateFooter();
 }
 
@@ -1065,6 +1116,7 @@ export async function closeBook() {
   meta = current = loc = null;
   pdf = false;
   anchorCfi = null; anchored = false;
+  queuedTurns.length = 0;
   awake(false);
   chapterPages = null;
   fullScreen(false);

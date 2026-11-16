@@ -1095,6 +1095,15 @@ html[data-re-reader] body.reading .toast button { color: #8ab4f8; font-weight: 5
    a brightness strip below. Bottom: "227 of 1918", day/night and bookmark, and a scrubber with a
    dot for each chapter. A tap in the middle hides all of it (and Android's own bars). */
 .re-info, .re-light, .re-bottom, #re-marks, #re-bm, #re-toc, #re-aa, #re-daynight { display: none; }
+/* The plain look shows the chapter, its pages and the pages left up top too, under the title
+   (the ReadEra look lays .re-info out its own way, below). */
+html:not([data-re-reader]) .reader-bar { flex-wrap: wrap; row-gap: 0; }
+/* This bar sits above the page, not over it, so its height is fixed: two lines, filled or not.
+   Text that grew or shrank it would resize the page, and the engine would lay the chapter out
+   again (and the line could change again, and again). */
+html:not([data-re-reader]) .re-info { display: flex; flex-direction: column; flex-basis: 100%; min-width: 0; height: calc(2 * 1.35em + 4px); overflow: hidden; padding: 0 8px 4px 46px; font-size: 12px; line-height: 1.35; opacity: 0.8; box-sizing: border-box; }
+html:not([data-re-reader]) .re-info > * { flex: none; height: 1.35em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html:not([data-re-reader]) #re-book, html:not([data-re-reader]) #re-author, html:not([data-re-reader]) #foot-chapter { display: none; }
 .re-scrub { display: contents; }
 html[data-re-reader] .reader-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0;

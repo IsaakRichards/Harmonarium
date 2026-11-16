@@ -85,6 +85,14 @@ const cfi = () => page.getAttribute("#viewer", "data-cfi");
 const chapter = () => page.textContent("#foot-chapter");
 const whereNow = () => page.textContent("#re-where"); // works while the bars are hidden
 const showBars = () => page.evaluate(() => document.body.classList.remove("immersive"));
+/** The place saved for the open book, straight from the database. */
+const savedPlace = () => page.evaluate(() => new Promise((res) => {
+  const r = indexedDB.open("harmonarium");
+  r.onsuccess = () => {
+    const g = r.result.transaction("progress").objectStore("progress").getAll();
+    g.onsuccess = () => { r.result.close(); res(g.result.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.cfi || null); };
+  };
+}));
 const setSelect = (id, value) => page.evaluate(([id, value]) => { const s = document.getElementById(id); s.value = value; s.dispatchEvent(new Event("change")); }, [id, value]);
 /** Tap the page itself (the engine's frame takes taps; the edges turn, the middle toggles the bars). */
 const tapAt = (x, y = 430) => page.touchscreen.tap(x, y);
@@ -222,6 +230,8 @@ await page.mouse.move(W / 2, 430);
 await page.mouse.wheel(0, 2500);
 await page.waitForTimeout(1500);
 check("Scrolling moves the reading place", (await cfi()) !== sa, `${sa} → ${await cfi()}`);
+await page.waitForTimeout(1500);
+check("…and is saved once you stop scrolling", (await savedPlace()) === (await cfi()), `${await cfi()}`);
 await page.screenshot({ path: `${OUT}/scroll.png` });
 await setSelect("flow", "paginated");
 await page.waitForTimeout(1200);
@@ -245,6 +255,35 @@ check("Each page turn moves the reading place", missed === 0, `${missed} of 6 tu
 const leftAt = await cfi(), leftWhere = await whereNow();
 await reopen();
 check("Reopening lands on the same page", (await cfi()) === leftAt && (await whereNow()) === leftWhere, `left ${leftWhere} (${leftAt}) · back at ${await whereNow()} (${await cfi()})`);
+// A swipe right after opening moves your place (the open place is held until you move yourself;
+// a swipe never goes through the reader's own page turns).
+{
+  const cdp = await context.newCDPSession(page);
+  const before = await cfi();
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 330, y: 450 }] });
+  for (let k = 1; k <= 10; k++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 330 - 22 * k, y: 450 }] });
+    await page.waitForTimeout(16);
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(2000);
+  const after = await cfi();
+  check("A swipe right after opening turns the page and saves it as your place", after !== before && (await savedPlace()) === after, `${before} → ${after} · saved ${await savedPlace()}`);
+  await cdp.detach();
+}
+// Quick taps all count: taps that land while a page is still sliding wait their turn.
+{
+  // From the start of the book, where Chapter 1 has pages enough for all four.
+  await page.evaluate(() => { const sl = document.getElementById("progress-slider"); sl.value = 0; sl.dispatchEvent(new Event("change")); });
+  await page.waitForTimeout(1200);
+  const startWhere = await whereNow();
+  const [, start] = /page (\d+) \//.exec(startWhere) || [];
+  for (let i = 0; i < 4; i++) { await tapAt(W - 20); await page.waitForTimeout(70); }
+  await page.waitForTimeout(3500);
+  const [, end] = /page (\d+) \//.exec(await whereNow()) || [];
+  check("Four quick taps turn four pages", Number(end) - Number(start) === 4, `${startWhere} → ${await whereNow()} · ${await page.textContent("#re-left")}`);
+  check("…and the page you stop on is saved", (await savedPlace()) === (await cfi()), `${await savedPlace()} vs ${await cfi()}`);
+}
 
 // ---- Phone conditions -------------------------------------------------------------------
 // Rotating, Android's bars hiding, split screen: the frame changes size again and again.
