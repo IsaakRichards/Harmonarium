@@ -8,6 +8,9 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
+  // The web copy on GitHub Pages lives under /Harmonarium/, so its build uses relative paths
+  // (HARMONARIUM_BASE=./, see .github/workflows/pages.yml). Everything else is served from "/".
+  base: process.env.HARMONARIUM_BASE || "/",
   clearScreen: false,
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   server: {

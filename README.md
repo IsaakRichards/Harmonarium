@@ -61,7 +61,12 @@ Each platform has its own build pipeline in GitHub Actions:
 | **Android** (`android.yml`) | signed universal `Harmonarium.apk` | every push to `main`, PRs, by hand |
 | **Sailfish OS** (`sailfish.yml`) | `harbour-harmonarium` RPMs for `aarch64` and `armv7hl` | every push to `main`, PRs, by hand |
 | **Release** (`release.yml`) | runs all three, then publishes one GitHub release with every file | pushing a `v*` tag, or by hand |
+| **Web** (`pages.yml`) | the browser copy, published to [isaakrichards.github.io/Harmonarium](https://isaakrichards.github.io/Harmonarium/) | every push to `main`, by hand |
 
+### In a browser (nothing to install)
+Open **https://isaakrichards.github.io/Harmonarium/** on any computer. Sheet sync works the same as in the apps (paste the URL and token in Settings). Add books with **+ Add books** or by choosing a folder. They're kept in that browser's own storage, so they stay put between visits on the same computer and browser, but clearing site data removes them. Backups download as a `.zip`. There are no in-app updates: the page is always the newest build from `main`.
+
+The first time, turn on Pages in the repo: **Settings → Pages → Source: GitHub Actions**.
 
 Builds from a push are under that run's **Artifacts** in the Actions tab. You can run any single platform from **Actions → (workflow) → Run workflow**. To publish a release:
 
