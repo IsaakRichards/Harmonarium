@@ -12,6 +12,8 @@ import * as CFI from "./foliate/epubcfi.js";
 import * as db from "./db.js";
 import * as sheet from "./sheet.js";
 import { escapeHtml, pct, toast, uuid } from "./util.js";
+import * as settings from "./settings.js";
+import { censorText } from "./censor.js";
 
 const $ = (id) => document.getElementById(id);
 let ctx = null;   // { bookId, isPdf, view(), current(), location(), jump(at), chapterFor(at), night(), pdfPos(page) … }
@@ -230,7 +232,7 @@ async function openQuote(id) {
   if (!q) return;
   const choice = await sheet.menu({
     title: q.note ? "Note" : "Quote",
-    subtitle: `“${q.text.slice(0, 200)}${q.text.length > 200 ? "…" : ""}”${q.note ? `\n\n${q.note}` : ""}`,
+    subtitle: `“${shown(q.text).slice(0, 200)}${q.text.length > 200 ? "…" : ""}”${q.note ? `\n\n${q.note}` : ""}`,
     items: [
       { label: "Copy", value: "copy", icon: "⧉" },
       { label: q.note ? "Edit note" : "Add a note", value: "note", icon: "✎" },
@@ -277,12 +279,14 @@ function renderLists() {
   }
 }
 const empty = (h, p) => `<div class="nav-empty"><b>${h}</b><span>${p}</span></div>`;
+/** Quotes saved before the censor went on are shown censored too (the saved text stays whole). */
+const shown = (t) => (settings.get()?.censor ? censorText(t) : t);
 function row(m) {
   const where = ctx?.isPdf && m.kind === "bookmark" ? `Page ${String(m.cfi).split(":")[1]}` : [m.chapter, pct(m.percent)].filter(Boolean).join(" · ");
   return `<div class="mark-row" data-id="${escapeHtml(m.id)}">
     <button class="mark-go" data-go>
       <span class="mark-where">${escapeHtml(where)}</span>
-      <span class="mark-text${m.kind === "quote" ? " q" : ""}">${escapeHtml(m.text || "—")}</span>
+      <span class="mark-text${m.kind === "quote" ? " q" : ""}">${escapeHtml(shown(m.text) || "—")}</span>
       ${m.note ? `<span class="mark-note">${escapeHtml(m.note)}</span>` : ""}
     </button>
     <button class="mark-x" data-x title="Delete" aria-label="Delete">✕</button>

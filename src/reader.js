@@ -16,6 +16,7 @@ import * as marks from "./marks.js";
 import * as finder from "./finder.js";
 import * as about from "./aboutbook.js";
 import * as sheet from "./sheet.js";
+import { censorDoc } from "./censor.js";
 
 const THEMES = {
   light: { bg: "#fbfaf7", fg: "#1d1b18", link: "#3b5bdb" },
@@ -131,6 +132,10 @@ export function init(h) {
     await rebuild(); // the book's fonts are put back or taken out as each chapter loads
   });
   $("hyphens").addEventListener("change", async (e) => { await settings.update({ hyphens: e.target.checked }); applyStyles(); });
+  $("censor").addEventListener("change", async (e) => {
+    await settings.update({ censor: e.target.checked });
+    await rebuild(); // chapters are censored (or left whole) as each one loads
+  });
   $("keep-awake").addEventListener("change", async (e) => { await settings.update({ keepAwake: e.target.checked }); awake(!!meta); });
   for (const id of ["brightness", "re-bright"]) {
     $(id).addEventListener("input", (e) => {
@@ -574,6 +579,7 @@ function toggleBars() {
 function onLoad({ doc, index }) {
   if (!pdf) {
     try { weaveFonts(doc); } catch (err) { console.warn("fonts", err); }
+    if (settings.get().censor) { try { censorDoc(doc); } catch (err) { console.warn("censor", err); } }
     // Hyphenation needs a language; borrow the book's when the chapter file has none.
     const html = doc.documentElement;
     const lang = view?.book?.metadata?.language;
@@ -1092,6 +1098,7 @@ export function syncPanelState() {
   $("text-align").value = s.textAlign || "auto";
   $("margins").value = s.margin || "m";
   $("hyphens").checked = s.hyphens !== false;
+  $("censor").checked = !!s.censor;
   $("keep-awake").checked = !!s.keepAwake;
   $("brightness").value = String(Math.round((s.brightness ?? 1) * 100));
   $("re-bright").value = $("brightness").value;
