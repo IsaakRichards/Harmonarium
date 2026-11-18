@@ -21,6 +21,7 @@ const DEFAULTS = {
   margin: "m",        // "s" | "m" | "l" | "xl" side margins
   textAlign: "auto",  // "auto" (justified in the ReadEra look) | "justify" | "left"
   hyphens: true,
+  censor: false,      // swear words and slurs in books shown as asterisks
   brightness: 1,      // 0.2–1, a dimmer laid over the page
   keepAwake: true,    // keep the screen on while a book is open
   lightStrip: true,   // ReadEra-style reader: brightness strip under the top bar

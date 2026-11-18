@@ -6,6 +6,8 @@
 // you back to where you were, like ReadEra's return arrow.
 import * as sheet from "./sheet.js";
 import { escapeHtml, toast } from "./util.js";
+import * as settings from "./settings.js";
+import { censorText } from "./censor.js";
 
 const $ = (id) => document.getElementById(id);
 let ctx = null;   // { isPdf, view(), display(at), current(), chapterFor(at), pages(), pageNow() … }
@@ -103,6 +105,8 @@ async function search(query) {
     if (n >= 500) return;
     n++;
     const i = excerpt.toLowerCase().indexOf(q.toLowerCase());
+    // Censored words keep their length, so the match is marked in the same place.
+    if (settings.get()?.censor) excerpt = censorText(excerpt);
     const html = i >= 0
       ? `${escapeHtml(excerpt.slice(0, i))}<mark>${escapeHtml(excerpt.slice(i, i + q.length))}</mark>${escapeHtml(excerpt.slice(i + q.length))}`
       : escapeHtml(excerpt);
